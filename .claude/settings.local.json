@@ -6,7 +6,15 @@
       "Bash(DATABASE_URL=\"postgres://postgres:%2FR%7CP8JqlSJ%5Br%25cl%7D@162.222.181.26:5432/postgres?sslmode=require\" go run cmd/migrate/main.go up)",
       "Bash(curl:*)",
       "Bash(tree:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(go test:*)",
+      "Bash(git commit:*)",
+      "Bash(find:*)",
+      "Bash(cat:*)",
+      "Bash(sed:*)",
+      "mcp__ide__getDiagnostics",
+      "Bash(go build:*)",
+      "Bash(DATABASE_URL=\"postgres://postgres:%2FR%7CP8JqlSJ%5Br%25cl%7D@162.222.181.26:5432/postgres?sslmode=require\" psql -f \"C:\\Repositories\\twigger-backend\\twigger-backend\\migrations\\005_add_localization.sql\")"
     ],
     "deny": [],
     "ask": []

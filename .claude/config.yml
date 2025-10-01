@@ -1,0 +1,2 @@
+# In your project root, create/edit .claude/config.yml
+agents_dir: ./.claude/agents

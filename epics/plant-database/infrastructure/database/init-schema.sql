@@ -1,11 +1,4 @@
 
-Gemini
-Maak een overzicht van deze map
-Analiseer elk bestand
-in deze map
-Wat kan Gemini doen met mappen
-in Google Drive
-Gemini in Workspace kan fouten maken, dus dubbelcheck de reacties. Meer informatie
 -- ============================================================================
 -- MULTI-COUNTRY, MULTILINGUAL PLANT DATABASE WITH SPATIAL CAPABILITIES
 -- PostgreSQL 15+ with PostGIS
