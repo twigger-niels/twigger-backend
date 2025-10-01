@@ -1,9 +1,114 @@
 
-# PostGIS Implementation Guide for Garden Mapping
+# Plant Database & Garden Management System - PRD
 
-## Overview
+## System Overview
 
-Version 5.0 of the plant database includes full PostGIS support, enabling sophisticated spatial analysis for garden planning and management. This guide covers practical implementation of Phase 2 spatial features.
+Comprehensive plant database with spatial garden mapping capabilities. The system uses PostgreSQL with PostGIS for spatial operations, Go for backend services, and provides both GraphQL and REST APIs.
+
+### Implementation Status
+
+- ✅ **Part 1: Database & Core Infrastructure** - PostgreSQL 17 with PostGIS, migrations, Cloud SQL setup
+- ✅ **Part 2: Plant Domain Service** - Complete DDD implementation with caching
+- 🚧 **Part 3: Garden Spatial Service** - In progress
+- 📋 **Part 4: Garden Analysis Engine** - Planned
+- 📋 **Part 5: REST API Gateway** - Planned
+- 📋 **Part 6: GraphQL Gateway** - Planned
+- 📋 **Part 7: Auth & User Management** - Planned
+
+---
+
+## Part 2: Plant Domain Service (Implemented)
+
+### Features Delivered
+
+**Plant Management**
+- Hierarchical taxonomy: Family → Genus → Species → Cultivar
+- Full botanical name generation and validation
+- Common names support (multiple per plant)
+- Full-text search with relevance ranking
+- Plant type classification (tree, shrub, perennial, etc.)
+
+**Growing Conditions**
+- Climate zones (USDA hardiness, heat zones)
+- Sun/shade requirements (7 types: full sun to full shade)
+- Water needs (very dry to aquatic)
+- Soil requirements (types, drainage, pH ranges)
+- Environmental tolerances (drought, salt, wind)
+- Temporal data (flowering/fruiting months)
+- Confidence levels for data quality
+
+**Companion Planting**
+- Beneficial, antagonistic, and neutral relationships
+- Distance recommendations (optimal and maximum)
+- Benefits tracking (pest control, nitrogen fixation, etc.)
+- Compatibility validation between plant pairs
+
+**Physical Characteristics**
+- Mature height and spread ranges
+- Growth rate classification
+- Flexible JSONB traits (colors, textures, toxicity, wildlife value)
+
+### API Endpoints (Service Layer)
+
+```go
+// Core operations
+GetPlant(plantID, includeDetails) -> Plant
+GetPlantWithConditions(plantID, countryID) -> Plant
+SearchPlants(query, filters) -> SearchResult
+FindByBotanicalName(botanicalName) -> Plant
+
+// Taxonomy queries
+FindPlantsByFamily(familyName) -> []Plant
+FindPlantsByGenus(genusName) -> []Plant
+
+// Companion planting
+GetCompanionPlants(plantID, beneficialOnly) -> []Companion
+GetBeneficialCompanions(plantID) -> []Companion
+GetAntagonisticPlants(plantID) -> []Companion
+ValidatePlantCompatibility(plantA, plantB) -> CompatibilityResult
+
+// Recommendations
+RecommendPlants(hardinessZone, sunRequirement) -> []Plant
+
+// Management
+CreatePlant(plant) -> error
+```
+
+### Performance Characteristics
+
+- Plant retrieval: <10ms (cached), <50ms (uncached)
+- Full-text search: <100ms (p95)
+- Companion queries: <50ms
+- Redis caching with smart TTLs (15min-2hr)
+- Connection pooling (25 connections)
+
+### Technical Implementation
+
+**Architecture**: Domain-Driven Design with clean architecture layers
+- `domain/entity/` - Business entities (Plant, Companion)
+- `domain/repository/` - Data access interfaces
+- `domain/service/` - Business logic
+- `infrastructure/database/` - PostgreSQL implementation
+- `infrastructure/cache/` - Redis caching
+- `pkg/types/` - Shared value objects
+
+**Database Integration**
+- Full-text search using PostgreSQL `to_tsvector`
+- Complex joins across taxonomy tables
+- GIST indexes on search vectors
+- Prepared statements for common queries
+
+**Testing**
+- 18 unit tests with mock repository
+- 52% test coverage on service layer
+- Testify/mock for isolation
+- All tests passing in <3s
+
+---
+
+## Part 3: Garden Spatial Service (PostGIS Features)
+
+Version 5.0 of the plant database includes full PostGIS support, enabling sophisticated spatial analysis for garden planning and management. This section covers implementation of spatial features.
 
 ## Core Spatial Tables
 
