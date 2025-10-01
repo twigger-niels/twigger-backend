@@ -398,3 +398,15 @@ L3 Cache: CDN (24 hour TTL for images)
 #### ADR-004: Cloud Run over Kubernetes
 **Decision**: Use Cloud Run for container hosting
 **Rationale**: Serverless scaling, reduced operational overhead
+
+#### ADR-005: Domain-Driven Design for Plant Service
+**Decision**: Implement Part 2 (Plant Service) using DDD with strict layer separation
+**Rationale**: Complex domain logic (taxonomy, companion planting, growing conditions) benefits from domain modeling. Clean separation enables independent testing and future refactoring.
+
+#### ADR-006: Repository Pattern with Caching Decorator
+**Decision**: Wrap PostgreSQL repository with Redis caching layer using decorator pattern
+**Rationale**: Transparent caching without polluting domain logic. Easy to enable/disable. Cache invalidation happens at infrastructure layer.
+
+#### ADR-007: Mock-based Unit Testing
+**Decision**: Use testify/mock for service layer tests, avoid database in unit tests
+**Rationale**: Fast test execution (<3s), no external dependencies, tests business logic in isolation. Integration tests use real database separately.
