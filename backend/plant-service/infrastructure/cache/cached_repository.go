@@ -23,9 +23,9 @@ func NewCachedPlantRepository(repo repository.PlantRepository, cache *RedisCache
 	}
 }
 
-// FindByID retrieves a plant by ID with caching
-func (r *CachedPlantRepository) FindByID(ctx context.Context, plantID string) (*entity.Plant, error) {
-	key := PlantKey(plantID)
+// FindByID retrieves a plant by ID with caching (language-aware)
+func (r *CachedPlantRepository) FindByID(ctx context.Context, plantID, languageID string, countryID *string) (*entity.Plant, error) {
+	key := PlantKeyWithLanguage(plantID, languageID, countryID)
 
 	// Try cache first
 	var plant entity.Plant
@@ -35,7 +35,7 @@ func (r *CachedPlantRepository) FindByID(ctx context.Context, plantID string) (*
 	}
 
 	// Cache miss - fetch from database
-	result, err := r.repo.FindByID(ctx, plantID)
+	result, err := r.repo.FindByID(ctx, plantID, languageID, countryID)
 	if err != nil {
 		return nil, err
 	}
@@ -47,15 +47,15 @@ func (r *CachedPlantRepository) FindByID(ctx context.Context, plantID string) (*
 }
 
 // FindByIDs retrieves multiple plants (partial caching implementation)
-func (r *CachedPlantRepository) FindByIDs(ctx context.Context, plantIDs []string) ([]*entity.Plant, error) {
+func (r *CachedPlantRepository) FindByIDs(ctx context.Context, plantIDs []string, languageID string, countryID *string) ([]*entity.Plant, error) {
 	// For simplicity, delegate to repo
 	// A full implementation would check cache for each ID
-	return r.repo.FindByIDs(ctx, plantIDs)
+	return r.repo.FindByIDs(ctx, plantIDs, languageID, countryID)
 }
 
-// Search performs search with caching
-func (r *CachedPlantRepository) Search(ctx context.Context, query string, filter *repository.SearchFilter) (*repository.SearchResult, error) {
-	key := SearchKey(query, filter)
+// Search performs search with caching (language-aware)
+func (r *CachedPlantRepository) Search(ctx context.Context, query string, filter *repository.SearchFilter, languageID string, countryID *string) (*repository.SearchResult, error) {
+	key := SearchKeyWithLanguage(query, filter, languageID, countryID)
 
 	// Try cache first
 	var result repository.SearchResult
@@ -65,7 +65,7 @@ func (r *CachedPlantRepository) Search(ctx context.Context, query string, filter
 	}
 
 	// Cache miss - perform search
-	searchResult, err := r.repo.Search(ctx, query, filter)
+	searchResult, err := r.repo.Search(ctx, query, filter, languageID, countryID)
 	if err != nil {
 		return nil, err
 	}
@@ -124,8 +124,9 @@ func (r *CachedPlantRepository) GetPhysicalCharacteristics(ctx context.Context, 
 	return result, nil
 }
 
-// GetCompanions retrieves companions with caching
-func (r *CachedPlantRepository) GetCompanions(ctx context.Context, plantID string, filter *entity.CompanionFilter) ([]*entity.Companion, error) {
+// GetCompanions retrieves companions with caching (language-aware)
+func (r *CachedPlantRepository) GetCompanions(ctx context.Context, plantID, languageID string, countryID *string, filter *entity.CompanionFilter) ([]*entity.Companion, error) {
+	// TODO: Include language in cache key for proper language-specific caching
 	key := CompanionFilterKey(plantID, filter)
 
 	// Try cache first
@@ -136,7 +137,7 @@ func (r *CachedPlantRepository) GetCompanions(ctx context.Context, plantID strin
 	}
 
 	// Cache miss - fetch from database
-	result, err := r.repo.GetCompanions(ctx, plantID, filter)
+	result, err := r.repo.GetCompanions(ctx, plantID, languageID, countryID, filter)
 	if err != nil {
 		return nil, err
 	}
@@ -166,10 +167,11 @@ func (r *CachedPlantRepository) Update(ctx context.Context, plant *entity.Plant)
 		return err
 	}
 
-	// Invalidate plant cache
-	_ = r.cache.Delete(ctx, PlantKey(plant.PlantID))
+	// Invalidate ALL language variants for this plant (critical for localization)
+	// Pattern: plant:plantID:* matches plant:plantID:en, plant:plantID:es:MX, etc.
+	_ = r.cache.DeletePattern(ctx, fmt.Sprintf("%s%s:*", PlantPrefix, plant.PlantID))
 
-	// Invalidate search caches
+	// Invalidate search caches (may contain this plant in different languages)
 	_ = r.cache.DeletePattern(ctx, InvalidateSearchPattern())
 
 	return nil
@@ -182,40 +184,43 @@ func (r *CachedPlantRepository) Delete(ctx context.Context, plantID string) erro
 		return err
 	}
 
-	// Invalidate all caches related to this plant
-	_ = r.cache.DeletePattern(ctx, InvalidatePlantPattern(plantID))
+	// Invalidate ALL language variants for this plant
+	_ = r.cache.DeletePattern(ctx, fmt.Sprintf("%s%s:*", PlantPrefix, plantID))
+
+	// Invalidate search caches
+	_ = r.cache.DeletePattern(ctx, InvalidateSearchPattern())
 
 	return nil
 }
 
 // Delegate methods that don't benefit much from caching
 
-func (r *CachedPlantRepository) FindByBotanicalName(ctx context.Context, botanicalName string) (*entity.Plant, error) {
-	return r.repo.FindByBotanicalName(ctx, botanicalName)
+func (r *CachedPlantRepository) FindByBotanicalName(ctx context.Context, botanicalName, languageID string, countryID *string) (*entity.Plant, error) {
+	return r.repo.FindByBotanicalName(ctx, botanicalName, languageID, countryID)
 }
 
-func (r *CachedPlantRepository) FindByCommonName(ctx context.Context, commonName string) ([]*entity.Plant, error) {
-	return r.repo.FindByCommonName(ctx, commonName)
+func (r *CachedPlantRepository) FindByCommonName(ctx context.Context, commonName, languageID string, countryID *string) ([]*entity.Plant, error) {
+	return r.repo.FindByCommonName(ctx, commonName, languageID, countryID)
 }
 
-func (r *CachedPlantRepository) FindByFamily(ctx context.Context, familyName string, limit, offset int) ([]*entity.Plant, error) {
-	return r.repo.FindByFamily(ctx, familyName, limit, offset)
+func (r *CachedPlantRepository) FindByFamily(ctx context.Context, familyName string, languageID string, countryID *string, limit, offset int) ([]*entity.Plant, error) {
+	return r.repo.FindByFamily(ctx, familyName, languageID, countryID, limit, offset)
 }
 
-func (r *CachedPlantRepository) FindByGenus(ctx context.Context, genusName string, limit, offset int) ([]*entity.Plant, error) {
-	return r.repo.FindByGenus(ctx, genusName, limit, offset)
+func (r *CachedPlantRepository) FindByGenus(ctx context.Context, genusName string, languageID string, countryID *string, limit, offset int) ([]*entity.Plant, error) {
+	return r.repo.FindByGenus(ctx, genusName, languageID, countryID, limit, offset)
 }
 
-func (r *CachedPlantRepository) FindBySpecies(ctx context.Context, genusName, speciesName string) ([]*entity.Plant, error) {
-	return r.repo.FindBySpecies(ctx, genusName, speciesName)
+func (r *CachedPlantRepository) FindBySpecies(ctx context.Context, genusName, speciesName, languageID string, countryID *string) ([]*entity.Plant, error) {
+	return r.repo.FindBySpecies(ctx, genusName, speciesName, languageID, countryID)
 }
 
 func (r *CachedPlantRepository) FindByGrowingConditions(ctx context.Context, filter *repository.GrowingConditionsFilter) ([]*entity.Plant, error) {
 	return r.repo.FindByGrowingConditions(ctx, filter)
 }
 
-func (r *CachedPlantRepository) GetCompanionsByType(ctx context.Context, plantID string, relType types.RelationshipType) ([]*entity.Companion, error) {
-	return r.repo.GetCompanionsByType(ctx, plantID, relType)
+func (r *CachedPlantRepository) GetCompanionsByType(ctx context.Context, plantID, languageID string, countryID *string, relType types.RelationshipType) ([]*entity.Companion, error) {
+	return r.repo.GetCompanionsByType(ctx, plantID, languageID, countryID, relType)
 }
 
 func (r *CachedPlantRepository) CreateCompanionRelationship(ctx context.Context, companion *entity.Companion) error {

@@ -27,12 +27,20 @@ const (
 	CountPrefix             = "count:"
 )
 
-// PlantKey generates a cache key for a plant by ID
+// PlantKey generates a cache key for a plant by ID (deprecated - use PlantKeyWithLanguage)
 func PlantKey(plantID string) string {
 	return fmt.Sprintf("%s%s", PlantPrefix, plantID)
 }
 
-// SearchKey generates a cache key for search results
+// PlantKeyWithLanguage generates a language-aware cache key for a plant
+func PlantKeyWithLanguage(plantID, languageID string, countryID *string) string {
+	if countryID != nil {
+		return fmt.Sprintf("%s%s:%s:%s", PlantPrefix, plantID, languageID, *countryID)
+	}
+	return fmt.Sprintf("%s%s:%s", PlantPrefix, plantID, languageID)
+}
+
+// SearchKey generates a cache key for search results (deprecated - use SearchKeyWithLanguage)
 // Uses MD5 hash of query and filter parameters for consistent keys
 func SearchKey(query string, filter interface{}) string {
 	// Serialize filter to JSON for hashing
@@ -44,6 +52,26 @@ func SearchKey(query string, filter interface{}) string {
 
 	// Combine query and filter
 	combined := fmt.Sprintf("%s:%s", query, string(filterJSON))
+	hash := hashString(combined)
+
+	return fmt.Sprintf("%s%s", SearchPrefix, hash)
+}
+
+// SearchKeyWithLanguage generates a language-aware cache key for search results
+func SearchKeyWithLanguage(query string, filter interface{}, languageID string, countryID *string) string {
+	// Serialize filter to JSON for hashing
+	filterJSON, err := json.Marshal(filter)
+	if err != nil {
+		filterJSON = []byte("{}")
+	}
+
+	// Include language and country in the cache key
+	countryPart := "global"
+	if countryID != nil {
+		countryPart = *countryID
+	}
+
+	combined := fmt.Sprintf("%s:%s:%s:%s", query, string(filterJSON), languageID, countryPart)
 	hash := hashString(combined)
 
 	return fmt.Sprintf("%s%s", SearchPrefix, hash)

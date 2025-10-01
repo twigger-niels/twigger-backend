@@ -8,7 +8,6 @@ import (
 
 	"twigger-backend/backend/plant-service/domain/entity"
 	"twigger-backend/backend/plant-service/domain/repository"
-	"twigger-backend/backend/plant-service/pkg/types"
 
 	"github.com/google/uuid"
 )
@@ -25,8 +24,19 @@ func NewPostgresPlantRepository(db *sql.DB) *PostgresPlantRepository {
 	}
 }
 
-// FindByID retrieves a plant by its ID
-func (r *PostgresPlantRepository) FindByID(ctx context.Context, plantID string) (*entity.Plant, error) {
+// FindByID retrieves a plant by its ID with localized common names
+func (r *PostgresPlantRepository) FindByID(ctx context.Context, plantID, languageID string, countryID *string) (*entity.Plant, error) {
+	// Validate inputs
+	if err := ValidatePlantID(plantID); err != nil {
+		return nil, fmt.Errorf("invalid plant_id: %w", err)
+	}
+	if err := ValidateLanguageID(languageID); err != nil {
+		return nil, fmt.Errorf("invalid language_id: %w", err)
+	}
+	if err := ValidateCountryID(countryID); err != nil {
+		return nil, fmt.Errorf("invalid country_id: %w", err)
+	}
+
 	query := `
 		SELECT
 			p.plant_id,
@@ -78,16 +88,16 @@ func (r *PostgresPlantRepository) FindByID(ctx context.Context, plantID string) 
 		plant.CultivarName = &cultivarName.String
 	}
 
-	// Load common names
-	if err := r.loadCommonNames(ctx, plant); err != nil {
+	// Load localized common names
+	if err := r.loadCommonNames(ctx, plant, languageID, countryID); err != nil {
 		return nil, fmt.Errorf("failed to load common names: %w", err)
 	}
 
 	return plant, nil
 }
 
-// FindByIDs retrieves multiple plants by their IDs
-func (r *PostgresPlantRepository) FindByIDs(ctx context.Context, plantIDs []string) ([]*entity.Plant, error) {
+// FindByIDs retrieves multiple plants by their IDs with localized common names
+func (r *PostgresPlantRepository) FindByIDs(ctx context.Context, plantIDs []string, languageID string, countryID *string) ([]*entity.Plant, error) {
 	if len(plantIDs) == 0 {
 		return []*entity.Plant{}, nil
 	}
@@ -161,11 +171,9 @@ func (r *PostgresPlantRepository) FindByIDs(ctx context.Context, plantIDs []stri
 		return nil, fmt.Errorf("error iterating plants: %w", err)
 	}
 
-	// Load common names for all plants
-	for _, plant := range plants {
-		if err := r.loadCommonNames(ctx, plant); err != nil {
-			return nil, fmt.Errorf("failed to load common names: %w", err)
-		}
+	// Load localized common names for all plants (batch loading to avoid N+1 query)
+	if err := r.loadCommonNamesForMultiplePlants(ctx, plants, languageID, countryID); err != nil {
+		return nil, fmt.Errorf("failed to load common names: %w", err)
 	}
 
 	return plants, nil
@@ -259,8 +267,8 @@ func (r *PostgresPlantRepository) Delete(ctx context.Context, plantID string) er
 	return nil
 }
 
-// FindByBotanicalName finds a plant by its exact botanical name
-func (r *PostgresPlantRepository) FindByBotanicalName(ctx context.Context, botanicalName string) (*entity.Plant, error) {
+// FindByBotanicalName finds a plant by its exact botanical name with localized common names
+func (r *PostgresPlantRepository) FindByBotanicalName(ctx context.Context, botanicalName, languageID string, countryID *string) (*entity.Plant, error) {
 	query := `
 		SELECT
 			p.plant_id,
@@ -312,19 +320,114 @@ func (r *PostgresPlantRepository) FindByBotanicalName(ctx context.Context, botan
 		plant.CultivarName = &cultivarName.String
 	}
 
-	if err := r.loadCommonNames(ctx, plant); err != nil {
+	if err := r.loadCommonNames(ctx, plant, languageID, countryID); err != nil {
 		return nil, fmt.Errorf("failed to load common names: %w", err)
 	}
 
 	return plant, nil
 }
 
-// FindByCommonName finds plants by common name (case-insensitive partial match)
-func (r *PostgresPlantRepository) FindByCommonName(ctx context.Context, commonName string) ([]*entity.Plant, error) {
-	// This would require a separate common_names table in the schema
-	// For now, return empty results
-	// TODO: Implement after common_names table is added
-	return []*entity.Plant{}, nil
+// FindByCommonName finds plants by common name with language context and fallback
+func (r *PostgresPlantRepository) FindByCommonName(ctx context.Context, commonName, languageID string, countryID *string) ([]*entity.Plant, error) {
+	// Validate inputs
+	if err := ValidateLanguageID(languageID); err != nil {
+		return nil, fmt.Errorf("invalid language_id: %w", err)
+	}
+	if err := ValidateCountryID(countryID); err != nil {
+		return nil, fmt.Errorf("invalid country_id: %w", err)
+	}
+	if commonName == "" {
+		return nil, fmt.Errorf("common_name is required")
+	}
+
+	// Search in requested language/country first
+	query := `
+		SELECT DISTINCT p.plant_id
+		FROM plants p
+		INNER JOIN plant_common_names pcn ON p.plant_id = pcn.plant_id
+		WHERE pcn.language_id = $1
+		  AND pcn.common_name ILIKE $2
+		  AND (
+			  pcn.country_id = $3 OR
+			  ($3 IS NOT NULL AND pcn.country_id IS NULL) OR
+			  $3 IS NULL
+		  )
+		ORDER BY p.plant_id
+		LIMIT 100
+	`
+
+	var countryIDParam interface{}
+	if countryID != nil {
+		countryIDParam = *countryID
+	}
+
+	rows, err := r.db.QueryContext(ctx, query, languageID, "%"+commonName+"%", countryIDParam)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query plants by common name: %w", err)
+	}
+	defer rows.Close()
+
+	plantIDs := make([]string, 0)
+	for rows.Next() {
+		var plantID string
+		if err := rows.Scan(&plantID); err != nil {
+			return nil, fmt.Errorf("failed to scan plant ID: %w", err)
+		}
+		plantIDs = append(plantIDs, plantID)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating plant IDs: %w", err)
+	}
+
+	// If no results and not English, try English fallback
+	if len(plantIDs) == 0 && languageID != "en" {
+		return r.findByCommonNameEnglishFallback(ctx, commonName, languageID, countryID)
+	}
+
+	// Load full plant details
+	if len(plantIDs) == 0 {
+		return []*entity.Plant{}, nil
+	}
+
+	return r.FindByIDs(ctx, plantIDs, languageID, countryID)
+}
+
+// findByCommonNameEnglishFallback searches in English when no results in requested language
+func (r *PostgresPlantRepository) findByCommonNameEnglishFallback(ctx context.Context, commonName, originalLanguageID string, countryID *string) ([]*entity.Plant, error) {
+	query := `
+		SELECT DISTINCT p.plant_id
+		FROM plants p
+		INNER JOIN plant_common_names pcn ON p.plant_id = pcn.plant_id
+		INNER JOIN languages l ON pcn.language_id = l.language_id
+		WHERE l.language_code = 'en'
+		  AND pcn.common_name ILIKE $1
+		  AND pcn.country_id IS NULL
+		ORDER BY p.plant_id
+		LIMIT 100
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, "%"+commonName+"%")
+	if err != nil {
+		return nil, fmt.Errorf("failed to query English fallback: %w", err)
+	}
+	defer rows.Close()
+
+	plantIDs := make([]string, 0)
+	for rows.Next() {
+		var plantID string
+		if err := rows.Scan(&plantID); err != nil {
+			return nil, fmt.Errorf("failed to scan plant ID: %w", err)
+		}
+		plantIDs = append(plantIDs, plantID)
+	}
+
+	if len(plantIDs) == 0 {
+		return []*entity.Plant{}, nil
+	}
+
+	// Return with original language context for common names
+	return r.FindByIDs(ctx, plantIDs, originalLanguageID, countryID)
 }
 
 // Count returns the total number of plants matching the filter
@@ -390,11 +493,238 @@ func (r *PostgresPlantRepository) BulkCreate(ctx context.Context, plants []*enti
 	return nil
 }
 
-// loadCommonNames loads common names for a plant
-// This is a helper method that would query a separate common_names table
-func (r *PostgresPlantRepository) loadCommonNames(ctx context.Context, plant *entity.Plant) error {
-	// TODO: Implement after common_names table is added to schema
-	// For now, just initialize empty slice
-	plant.CommonNames = []string{}
+// loadCommonNames loads common names for a plant with language context and fallback
+func (r *PostgresPlantRepository) loadCommonNames(ctx context.Context, plant *entity.Plant, languageID string, countryID *string) error {
+	query := `
+		SELECT common_name, is_primary, country_id IS NOT NULL AS is_country_specific
+		FROM plant_common_names
+		WHERE plant_id = $1
+		  AND language_id = $2
+		  AND (
+			  country_id = $3 OR
+			  ($3 IS NOT NULL AND country_id IS NULL) OR
+			  $3 IS NULL
+		  )
+		ORDER BY
+			country_id IS NOT NULL DESC, -- Country-specific first
+			is_primary DESC,
+			common_name
+	`
+
+	var countryIDParam interface{}
+	if countryID != nil {
+		countryIDParam = *countryID
+	}
+
+	rows, err := r.db.QueryContext(ctx, query, plant.PlantID, languageID, countryIDParam)
+	if err != nil {
+		return fmt.Errorf("failed to query common names: %w", err)
+	}
+	defer rows.Close()
+
+	commonNames := make([]string, 0)
+	for rows.Next() {
+		var name string
+		var isPrimary bool
+		var isCountrySpecific bool
+
+		if err := rows.Scan(&name, &isPrimary, &isCountrySpecific); err != nil {
+			return fmt.Errorf("failed to scan common name: %w", err)
+		}
+
+		commonNames = append(commonNames, name)
+	}
+
+	if err = rows.Err(); err != nil {
+		return fmt.Errorf("error iterating common names: %w", err)
+	}
+
+	// Fallback to English if no names found in requested language
+	if len(commonNames) == 0 && languageID != "en" {
+		return r.loadCommonNamesEnglishFallback(ctx, plant)
+	}
+
+	plant.CommonNames = commonNames
 	return nil
 }
+
+// loadCommonNamesForMultiplePlants loads common names for multiple plants in a single query (batch loading)
+// This prevents N+1 query problems when loading lists of plants
+func (r *PostgresPlantRepository) loadCommonNamesForMultiplePlants(ctx context.Context, plants []*entity.Plant, languageID string, countryID *string) error {
+	if len(plants) == 0 {
+		return nil
+	}
+
+	// Collect all plant IDs
+	plantIDs := make([]string, len(plants))
+	plantMap := make(map[string]*entity.Plant)
+	for i, p := range plants {
+		plantIDs[i] = p.PlantID
+		plantMap[p.PlantID] = p
+		// Initialize empty slices
+		p.CommonNames = []string{}
+	}
+
+	// Build placeholders for IN clause
+	placeholders := make([]string, len(plantIDs))
+	args := make([]interface{}, len(plantIDs)+2)
+	for i, id := range plantIDs {
+		placeholders[i] = fmt.Sprintf("$%d", i+1)
+		args[i] = id
+	}
+	args[len(plantIDs)] = languageID
+
+	var countryIDParam interface{}
+	if countryID != nil {
+		countryIDParam = *countryID
+	}
+	args[len(plantIDs)+1] = countryIDParam
+
+	query := fmt.Sprintf(`
+		SELECT plant_id, common_name, is_primary, country_id IS NOT NULL AS is_country_specific
+		FROM plant_common_names
+		WHERE plant_id IN (%s)
+		  AND language_id = $%d
+		  AND (
+			  country_id = $%d OR
+			  ($%d IS NOT NULL AND country_id IS NULL) OR
+			  $%d IS NULL
+		  )
+		ORDER BY
+			plant_id,
+			country_id IS NOT NULL DESC,
+			is_primary DESC,
+			common_name
+	`, strings.Join(placeholders, ","), len(plantIDs)+1, len(plantIDs)+2, len(plantIDs)+2, len(plantIDs)+2)
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return fmt.Errorf("failed to batch query common names: %w", err)
+	}
+	defer rows.Close()
+
+	// Group results by plant_id
+	namesByPlant := make(map[string][]string)
+	for rows.Next() {
+		var plantID, name string
+		var isPrimary, isCountrySpecific bool
+
+		if err := rows.Scan(&plantID, &name, &isPrimary, &isCountrySpecific); err != nil {
+			return fmt.Errorf("failed to scan common name: %w", err)
+		}
+
+		namesByPlant[plantID] = append(namesByPlant[plantID], name)
+	}
+
+	if err = rows.Err(); err != nil {
+		return fmt.Errorf("error iterating common names: %w", err)
+	}
+
+	// Assign names to plants
+	plantsNeedingFallback := make([]*entity.Plant, 0)
+	for _, plant := range plants {
+		if names, ok := namesByPlant[plant.PlantID]; ok && len(names) > 0 {
+			plant.CommonNames = names
+		} else if languageID != "en" {
+			// Track plants that need English fallback
+			plantsNeedingFallback = append(plantsNeedingFallback, plant)
+		}
+	}
+
+	// Handle English fallback for plants with no names
+	if len(plantsNeedingFallback) > 0 {
+		return r.loadEnglishFallbackForMultiplePlants(ctx, plantsNeedingFallback)
+	}
+
+	return nil
+}
+
+// loadEnglishFallbackForMultiplePlants loads English common names for multiple plants as fallback
+func (r *PostgresPlantRepository) loadEnglishFallbackForMultiplePlants(ctx context.Context, plants []*entity.Plant) error {
+	if len(plants) == 0 {
+		return nil
+	}
+
+	// Collect plant IDs
+	plantIDs := make([]string, len(plants))
+	plantMap := make(map[string]*entity.Plant)
+	for i, p := range plants {
+		plantIDs[i] = p.PlantID
+		plantMap[p.PlantID] = p
+	}
+
+	// Build placeholders
+	placeholders := make([]string, len(plantIDs))
+	args := make([]interface{}, len(plantIDs))
+	for i, id := range plantIDs {
+		placeholders[i] = fmt.Sprintf("$%d", i+1)
+		args[i] = id
+	}
+
+	query := fmt.Sprintf(`
+		SELECT pcn.plant_id, pcn.common_name
+		FROM plant_common_names pcn
+		INNER JOIN languages l ON pcn.language_id = l.language_id
+		WHERE pcn.plant_id IN (%s)
+		  AND l.language_code = 'en'
+		  AND pcn.country_id IS NULL
+		ORDER BY pcn.plant_id, pcn.is_primary DESC, pcn.common_name
+	`, strings.Join(placeholders, ","))
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return fmt.Errorf("failed to query English fallback: %w", err)
+	}
+	defer rows.Close()
+
+	// Group by plant_id
+	namesByPlant := make(map[string][]string)
+	for rows.Next() {
+		var plantID, name string
+		if err := rows.Scan(&plantID, &name); err != nil {
+			return fmt.Errorf("failed to scan fallback name: %w", err)
+		}
+		namesByPlant[plantID] = append(namesByPlant[plantID], name)
+	}
+
+	// Assign to plants
+	for _, plant := range plants {
+		if names, ok := namesByPlant[plant.PlantID]; ok {
+			plant.CommonNames = names
+		}
+	}
+
+	return nil
+}
+
+// loadCommonNamesEnglishFallback loads English common names as fallback
+func (r *PostgresPlantRepository) loadCommonNamesEnglishFallback(ctx context.Context, plant *entity.Plant) error {
+	query := `
+		SELECT common_name
+		FROM plant_common_names pcn
+		INNER JOIN languages l ON pcn.language_id = l.language_id
+		WHERE pcn.plant_id = $1
+		  AND l.language_code = 'en'
+		  AND pcn.country_id IS NULL
+		ORDER BY pcn.is_primary DESC, pcn.common_name
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, plant.PlantID)
+	if err != nil {
+		return fmt.Errorf("failed to query English fallback names: %w", err)
+	}
+	defer rows.Close()
+
+	commonNames := make([]string, 0)
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return fmt.Errorf("failed to scan fallback name: %w", err)
+		}
+		commonNames = append(commonNames, name)
+	}
+
+	plant.CommonNames = commonNames
+	return nil
+}
+

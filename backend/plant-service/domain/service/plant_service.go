@@ -28,7 +28,8 @@ func (s *PlantService) GetPlant(ctx context.Context, plantID string, includeDeta
 		return nil, entity.ErrInvalidPlantID
 	}
 
-	plant, err := s.repo.FindByID(ctx, plantID)
+	// TODO: Update API layer to pass language context from user preferences
+	plant, err := s.repo.FindByID(ctx, plantID, "en", nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get plant: %w", err)
 	}
@@ -82,8 +83,8 @@ func (s *PlantService) SearchPlants(ctx context.Context, query string, filter *r
 		filter.Offset = 0
 	}
 
-	// Perform search
-	result, err := s.repo.Search(ctx, query, filter)
+	// Perform search - TODO: Pass language context from API layer
+	result, err := s.repo.Search(ctx, query, filter, "en", nil)
 	if err != nil {
 		return nil, fmt.Errorf("search failed: %w", err)
 	}
@@ -103,7 +104,8 @@ func (s *PlantService) FindByBotanicalName(ctx context.Context, botanicalName st
 		return nil, fmt.Errorf("botanical name is required")
 	}
 
-	return s.repo.FindByBotanicalName(ctx, botanicalName)
+	// TODO: Pass language context from API layer
+	return s.repo.FindByBotanicalName(ctx, botanicalName, "en", nil)
 }
 
 // FindPlantsByFamily retrieves all plants in a family
@@ -117,7 +119,8 @@ func (s *PlantService) FindPlantsByFamily(ctx context.Context, familyName string
 		limit = 20
 	}
 
-	return s.repo.FindByFamily(ctx, familyName, limit, offset)
+	// TODO: Pass language context from API layer
+	return s.repo.FindByFamily(ctx, familyName, "en", nil, limit, offset)
 }
 
 // FindPlantsByGenus retrieves all plants in a genus
@@ -131,7 +134,8 @@ func (s *PlantService) FindPlantsByGenus(ctx context.Context, genusName string, 
 		limit = 20
 	}
 
-	return s.repo.FindByGenus(ctx, genusName, limit, offset)
+	// TODO: Pass language context from API layer
+	return s.repo.FindByGenus(ctx, genusName, "en", nil, limit, offset)
 }
 
 // GetCompanionPlants retrieves companion relationships for a plant
@@ -145,7 +149,8 @@ func (s *PlantService) GetCompanionPlants(ctx context.Context, plantID string, b
 		BeneficialOnly: beneficialOnly,
 	}
 
-	return s.repo.GetCompanions(ctx, plantID, filter)
+	// TODO: Pass language context from API layer
+	return s.repo.GetCompanions(ctx, plantID, "en", nil, filter)
 }
 
 // GetBeneficialCompanions retrieves only beneficial companion plants
@@ -165,7 +170,8 @@ func (s *PlantService) GetAntagonisticPlants(ctx context.Context, plantID string
 		RelationshipType: &relType,
 	}
 
-	return s.repo.GetCompanions(ctx, plantID, filter)
+	// TODO: Pass language context from API layer
+	return s.repo.GetCompanions(ctx, plantID, "en", nil, filter)
 }
 
 // RecommendPlants recommends plants based on growing conditions
@@ -195,7 +201,8 @@ func (s *PlantService) ValidatePlantCompatibility(ctx context.Context, plantAID,
 	}
 
 	// Get companion relationships for plant A
-	companions, err := s.repo.GetCompanions(ctx, plantAID, nil)
+	// TODO: Pass language context from API layer
+	companions, err := s.repo.GetCompanions(ctx, plantAID, "en", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get companions: %w", err)
 	}
@@ -233,7 +240,7 @@ func (s *PlantService) CreatePlant(ctx context.Context, plant *entity.Plant) err
 	}
 
 	// Check if plant with same botanical name already exists
-	existing, err := s.repo.FindByBotanicalName(ctx, plant.FullBotanicalName)
+	existing, err := s.repo.FindByBotanicalName(ctx, plant.FullBotanicalName, "en", nil)
 	if err == nil && existing != nil {
 		return entity.ErrPlantAlreadyExists
 	}

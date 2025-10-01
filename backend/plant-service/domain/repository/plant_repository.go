@@ -9,22 +9,22 @@ import (
 
 // PlantRepository defines the interface for plant data access
 type PlantRepository interface {
-	// Basic CRUD operations
-	FindByID(ctx context.Context, plantID string) (*entity.Plant, error)
-	FindByIDs(ctx context.Context, plantIDs []string) ([]*entity.Plant, error)
+	// Basic CRUD operations (language context required for common names)
+	FindByID(ctx context.Context, plantID, languageID string, countryID *string) (*entity.Plant, error)
+	FindByIDs(ctx context.Context, plantIDs []string, languageID string, countryID *string) ([]*entity.Plant, error)
 	Create(ctx context.Context, plant *entity.Plant) error
 	Update(ctx context.Context, plant *entity.Plant) error
 	Delete(ctx context.Context, plantID string) error
 
-	// Search operations
-	Search(ctx context.Context, query string, filter *SearchFilter) (*SearchResult, error)
-	FindByBotanicalName(ctx context.Context, botanicalName string) (*entity.Plant, error)
-	FindByCommonName(ctx context.Context, commonName string) ([]*entity.Plant, error)
+	// Search operations (with localization)
+	Search(ctx context.Context, query string, filter *SearchFilter, languageID string, countryID *string) (*SearchResult, error)
+	FindByBotanicalName(ctx context.Context, botanicalName, languageID string, countryID *string) (*entity.Plant, error)
+	FindByCommonName(ctx context.Context, commonName, languageID string, countryID *string) ([]*entity.Plant, error)
 
-	// Taxonomy queries
-	FindByFamily(ctx context.Context, familyName string, limit, offset int) ([]*entity.Plant, error)
-	FindByGenus(ctx context.Context, genusName string, limit, offset int) ([]*entity.Plant, error)
-	FindBySpecies(ctx context.Context, genusName, speciesName string) ([]*entity.Plant, error)
+	// Taxonomy queries (with localization)
+	FindByFamily(ctx context.Context, familyName string, languageID string, countryID *string, limit, offset int) ([]*entity.Plant, error)
+	FindByGenus(ctx context.Context, genusName string, languageID string, countryID *string, limit, offset int) ([]*entity.Plant, error)
+	FindBySpecies(ctx context.Context, genusName, speciesName, languageID string, countryID *string) ([]*entity.Plant, error)
 
 	// Growing conditions queries
 	GetGrowingConditions(ctx context.Context, plantID, countryID string) (*types.GrowingConditions, error)
@@ -33,9 +33,9 @@ type PlantRepository interface {
 	// Physical characteristics queries
 	GetPhysicalCharacteristics(ctx context.Context, plantID string) (*types.PhysicalCharacteristics, error)
 
-	// Companion plant queries
-	GetCompanions(ctx context.Context, plantID string, filter *entity.CompanionFilter) ([]*entity.Companion, error)
-	GetCompanionsByType(ctx context.Context, plantID string, relType types.RelationshipType) ([]*entity.Companion, error)
+	// Companion plant queries (with localization support)
+	GetCompanions(ctx context.Context, plantID, languageID string, countryID *string, filter *entity.CompanionFilter) ([]*entity.Companion, error)
+	GetCompanionsByType(ctx context.Context, plantID, languageID string, countryID *string, relType types.RelationshipType) ([]*entity.Companion, error)
 	CreateCompanionRelationship(ctx context.Context, companion *entity.Companion) error
 	DeleteCompanionRelationship(ctx context.Context, relationshipID string) error
 

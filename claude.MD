@@ -94,6 +94,119 @@ SELECT ST_AsGeoJSON(boundary) FROM gardens
 - **Display**: Convert to Web Mercator for maps
 - **Calculations**: Use geography type for accurate measurements
 
+### Working with Spatial Data
+
+#### GeoJSON Input/Output
+```go
+// Always validate GeoJSON on input
+func ValidateGeoJSON(geojson string) error {
+    // Check valid structure
+    // Ensure polygon closure
+    // Check for self-intersection
+}
+
+// Convert for PostGIS storage
+geometry := fmt.Sprintf("ST_GeomFromGeoJSON('%s')", geojson)
+
+// Return as GeoJSON
+SELECT ST_AsGeoJSON(boundary) FROM gardens
+```
+
+#### Coordinate Systems
+- **Storage**: Always use WGS84 (SRID 4326)
+- **Display**: Convert to Web Mercator for maps
+- **Calculations**: Use geography type for accurate measurements
+
+### Localization Patterns
+
+#### Always Query with Language Context
+```go
+// WRONG - Missing localization
+func GetPlant(plantID string) (*Plant, error) {
+    query := `SELECT * FROM plants WHERE plant_id = $1`
+}
+
+// CORRECT - Include language context
+func GetPlant(plantID, languageID, countryID string) (*Plant, error) {
+    query := `
+        SELECT 
+            p.*,
+            array_agg(pcn.common_name) AS common_names
+        FROM plants p
+        LEFT JOIN plant_common_names pcn ON p.plant_id = pcn.plant_id
+        WHERE p.plant_id = $1 
+          AND pcn.language_id = $2
+          AND (pcn.country_id = $3 OR pcn.country_id IS NULL)
+        GROUP BY p.plant_id
+    `
+}
+```
+
+#### Implement Fallback Strategy
+```go
+func GetLocalizedText(key, langID, countryID string) string {
+    // 1. Try country + language specific
+    text := getCountrySpecific(key, langID, countryID)
+    if text != "" {
+        return text
+    }
+    
+    // 2. Try language global
+    text = getLanguageGlobal(key, langID)
+    if text != "" {
+        return text
+    }
+    
+    // 3. Fallback to English
+    text = getEnglish(key)
+    if text != "" {
+        return text
+    }
+    
+    // 4. Return key as last resort
+    return key
+}
+```
+
+#### Cache Translations
+```go
+// Cache translations per language to avoid repeated queries
+type TranslationCache struct {
+    mu sync.RWMutex
+    cache map[string]map[string]string // [language_id][key]value
+}
+
+func (tc *TranslationCache) Get(langID, key string) string {
+    tc.mu.RLock()
+    defer tc.mu.RUnlock()
+    
+    if lang, ok := tc.cache[langID]; ok {
+        if val, ok := lang[key]; ok {
+            return val
+        }
+    }
+    return ""
+}
+```
+
+#### Handle Multi-Language Search
+```go
+// Search should work across all languages
+func SearchPlants(query, languageID string) ([]*Plant, error) {
+    searchQuery := `
+        WITH name_matches AS (
+            SELECT DISTINCT p.plant_id
+            FROM plants p
+            LEFT JOIN plant_common_names pcn ON p.plant_id = pcn.plant_id
+            WHERE pcn.common_name ILIKE $1
+               OR p.full_botanical_name ILIKE $1
+        )
+        SELECT ... FROM plants WHERE plant_id IN (SELECT plant_id FROM name_matches)
+    `
+    return db.Query(searchQuery, "%"+query+"%")
+}
+```
+
 ### API Development Patterns
 
 #### GraphQL Resolvers
@@ -160,6 +273,153 @@ if err := tx.Commit(); err != nil {
 3. **Don't hardcode configurations** - Use environment variables
 4. **Don't skip validation** - Especially for spatial data
 5. **Don't mix concerns** - Keep domain logic separate from infrastructure
+
+### Critical Localization Gotchas
+
+#### 1. N+1 Query Risk with Localized Data
+**Problem**: Loading localized data (common names, descriptions) in loops causes N+1 queries
+```go
+// WRONG - Executes 1 query per plant (N+1 problem)
+for _, plant := range plants {
+    names, _ := repo.GetCommonNames(plant.ID, languageID)
+    plant.CommonNames = names
+}
+
+// CORRECT - Batch loading with single IN clause query
+func (r *Repository) loadCommonNamesForMultiplePlants(ctx context.Context, plants []*Plant, languageID string) error {
+    plantIDs := extractIDs(plants)
+    query := `
+        SELECT plant_id, common_name
+        FROM plant_common_names
+        WHERE plant_id IN (...)  -- Single query for all plants
+          AND language_id = $1
+    `
+    // Group results and assign to plants
+}
+```
+**Rule**: Always implement `loadXForMultipleY()` batch methods for one-to-many localized relationships
+
+#### 2. Language Context Required Everywhere
+**Problem**: Missing languageID/countryID parameters causes incomplete data
+```go
+// WRONG - Missing language context
+func FindByID(ctx context.Context, plantID string) (*Plant, error)
+
+// CORRECT - Always include language context
+func FindByID(ctx context.Context, plantID, languageID string, countryID *string) (*Plant, error)
+```
+**Current State**: Service layer uses hardcoded `"en"` with TODO comments. These MUST be replaced when API layer extracts language from request context.
+
+**Migration Path**:
+```go
+// Service layer (temporary - until Part 4)
+plant, err := s.repo.FindByID(ctx, plantID, "en", nil)  // TODO: Extract from context
+
+// API layer (Part 4 implementation)
+langCtx := middleware.ExtractLanguageContext(ctx)
+plant, err := s.repo.FindByID(ctx, plantID, langCtx.LanguageID, langCtx.CountryID)
+```
+
+#### 3. Language-Aware Cache Keys
+**Problem**: Cache keys without language context cause stale data across languages
+```go
+// WRONG - Language-agnostic key (different languages overwrite each other)
+key := fmt.Sprintf("plant:%s", plantID)
+
+// CORRECT - Include language in cache key
+key := fmt.Sprintf("plant:%s:%s", plantID, languageID)
+if countryID != nil {
+    key = fmt.Sprintf("plant:%s:%s:%s", plantID, languageID, *countryID)
+}
+```
+**Cache Invalidation**: Use pattern matching to delete ALL language variants
+```go
+// When updating plant, invalidate all language variants
+pattern := fmt.Sprintf("plant:%s:*", plantID)  // Matches plant:ID:en, plant:ID:es:MX, etc.
+cache.DeletePattern(ctx, pattern)
+```
+
+#### 4. Composite Indexes Required for Localization Queries
+**Problem**: Single-column indexes insufficient for multi-column localization filters
+```sql
+-- WRONG - Separate indexes (query planner may not use optimally)
+CREATE INDEX idx_plant_id ON plant_common_names(plant_id);
+CREATE INDEX idx_language_id ON plant_common_names(language_id);
+
+-- CORRECT - Composite index covering exact query pattern
+CREATE INDEX idx_plant_common_names_lookup
+ON plant_common_names(plant_id, language_id, country_id);
+
+-- Also needed for name-based searches
+CREATE INDEX idx_plant_common_names_name_lang
+ON plant_common_names(language_id, common_name);
+```
+**Rule**: Create composite indexes matching the WHERE clause order in your most common queries
+
+#### 5. Input Validation at Repository Boundary
+**Problem**: Malformed language/country IDs reaching SQL layer cause cryptic errors
+```go
+// Validate at repository entry point
+func (r *Repository) FindByID(ctx context.Context, plantID, languageID string, countryID *string) (*Plant, error) {
+    if err := ValidatePlantID(plantID); err != nil {
+        return nil, fmt.Errorf("invalid plant_id: %w", err)
+    }
+    if err := ValidateLanguageID(languageID); err != nil {
+        return nil, fmt.Errorf("invalid language_id: %w", err)
+    }
+    if err := ValidateCountryID(countryID); err != nil {
+        return nil, fmt.Errorf("invalid country_id: %w", err)
+    }
+    // ... proceed with query
+}
+```
+**Accept Both Formats**: Validators should accept UUIDs OR ISO codes (en, es, US, MX)
+
+#### 6. Fallback Chain Implementation
+**Problem**: Missing fallback logic leaves users with empty data
+```sql
+-- Implement 4-tier fallback in SQL
+SELECT COALESCE(
+    (SELECT name WHERE language_id = $1 AND country_id = $2),  -- 1. Country + Language
+    (SELECT name WHERE language_id = $1 AND country_id IS NULL), -- 2. Language global
+    (SELECT name WHERE language_id = 'en' AND country_id IS NULL), -- 3. English
+    botanical_name  -- 4. Fallback to scientific name
+)
+```
+
+#### 7. Localization Migration Dependency
+**Critical**: Migration `005_add_localization.sql` MUST be applied before Part 2 features work
+- Adds 8 localization tables (plant_common_names, plant_descriptions, etc.)
+- Adds 3 helper functions (get_localized_text, get_characteristic_translation, etc.)
+- Adds composite indexes for performance
+
+**Check Before Development**:
+```bash
+# Verify migration applied
+psql -c "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'plant_common_names')"
+```
+
+#### 8. Pattern-Based Cache Invalidation
+**Problem**: Updating plant only invalidates one language variant
+```go
+// WRONG - Only deletes English cache entry
+cache.Delete(ctx, fmt.Sprintf("plant:%s:en", plantID))
+
+// CORRECT - Delete all language variants using wildcards
+cache.DeletePattern(ctx, fmt.Sprintf("plant:%s:*", plantID))
+```
+**Redis SCAN Note**: Use SCAN instead of KEYS for production (non-blocking)
+
+#### 9. Companion Plants Need Language Context
+**Problem**: Companion relationships were hardcoded to English
+```go
+// WRONG - Hardcoded English for companion names
+companions, err := r.repo.GetCompanions(ctx, plantID, "en", nil, filter)
+
+// CORRECT - Pass through user's language context
+companions, err := r.repo.GetCompanions(ctx, plantID, languageID, countryID, filter)
+```
+**Note**: Companion benefits (companion_benefits_i18n table) also localized - don't forget!
 
 ### Performance Considerations
 

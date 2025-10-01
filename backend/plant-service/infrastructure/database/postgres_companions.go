@@ -12,8 +12,8 @@ import (
 	"github.com/lib/pq"
 )
 
-// GetCompanions retrieves companion relationships for a plant
-func (r *PostgresPlantRepository) GetCompanions(ctx context.Context, plantID string, filter *entity.CompanionFilter) ([]*entity.Companion, error) {
+// GetCompanions retrieves companion relationships for a plant with localized names
+func (r *PostgresPlantRepository) GetCompanions(ctx context.Context, plantID, languageID string, countryID *string, filter *entity.CompanionFilter) ([]*entity.Companion, error) {
 	// Build query with filter
 	query := `
 		SELECT
@@ -100,9 +100,9 @@ func (r *PostgresPlantRepository) GetCompanions(ctx context.Context, plantID str
 		return nil, fmt.Errorf("error iterating companions: %w", err)
 	}
 
-	// Optionally load plant details for each companion
+	// Optionally load plant details for each companion with localized names
 	if len(companions) > 0 {
-		if err := r.loadCompanionPlants(ctx, companions, plantID); err != nil {
+		if err := r.loadCompanionPlants(ctx, companions, plantID, languageID, countryID); err != nil {
 			return nil, fmt.Errorf("failed to load companion plants: %w", err)
 		}
 	}
@@ -110,13 +110,13 @@ func (r *PostgresPlantRepository) GetCompanions(ctx context.Context, plantID str
 	return companions, nil
 }
 
-// GetCompanionsByType retrieves companions filtered by relationship type
-func (r *PostgresPlantRepository) GetCompanionsByType(ctx context.Context, plantID string, relType types.RelationshipType) ([]*entity.Companion, error) {
+// GetCompanionsByType retrieves companions filtered by relationship type with localized names
+func (r *PostgresPlantRepository) GetCompanionsByType(ctx context.Context, plantID, languageID string, countryID *string, relType types.RelationshipType) ([]*entity.Companion, error) {
 	filter := &entity.CompanionFilter{
 		PlantID:          &plantID,
 		RelationshipType: &relType,
 	}
-	return r.GetCompanions(ctx, plantID, filter)
+	return r.GetCompanions(ctx, plantID, languageID, countryID, filter)
 }
 
 // CreateCompanionRelationship creates a new companion relationship
@@ -187,8 +187,8 @@ func (r *PostgresPlantRepository) DeleteCompanionRelationship(ctx context.Contex
 	return nil
 }
 
-// loadCompanionPlants loads the plant entities for companion relationships
-func (r *PostgresPlantRepository) loadCompanionPlants(ctx context.Context, companions []*entity.Companion, forPlantID string) error {
+// loadCompanionPlants loads the plant entities for companion relationships with localized names
+func (r *PostgresPlantRepository) loadCompanionPlants(ctx context.Context, companions []*entity.Companion, forPlantID, languageID string, countryID *string) error {
 	// Collect all plant IDs that are NOT the original plant
 	plantIDs := make(map[string]bool)
 	for _, c := range companions {
@@ -210,8 +210,8 @@ func (r *PostgresPlantRepository) loadCompanionPlants(ctx context.Context, compa
 		return nil
 	}
 
-	// Load all companion plants
-	plants, err := r.FindByIDs(ctx, ids)
+	// Load all companion plants with localized names
+	plants, err := r.FindByIDs(ctx, ids, languageID, countryID)
 	if err != nil {
 		return fmt.Errorf("failed to load companion plants: %w", err)
 	}

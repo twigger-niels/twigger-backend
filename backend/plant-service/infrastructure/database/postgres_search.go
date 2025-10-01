@@ -11,7 +11,7 @@ import (
 )
 
 // Search performs full-text search on plants with filtering and pagination
-func (r *PostgresPlantRepository) Search(ctx context.Context, query string, filter *repository.SearchFilter) (*repository.SearchResult, error) {
+func (r *PostgresPlantRepository) Search(ctx context.Context, query string, filter *repository.SearchFilter, languageID string, countryID *string) (*repository.SearchResult, error) {
 	if filter == nil {
 		filter = repository.DefaultSearchFilter()
 	}
@@ -174,11 +174,9 @@ func (r *PostgresPlantRepository) Search(ctx context.Context, query string, filt
 		return nil, fmt.Errorf("error iterating search results: %w", err)
 	}
 
-	// Load common names for all plants
-	for _, plant := range plants {
-		if err := r.loadCommonNames(ctx, plant); err != nil {
-			return nil, fmt.Errorf("failed to load common names: %w", err)
-		}
+	// Load common names for all plants (batch loading to avoid N+1 query)
+	if err := r.loadCommonNamesForMultiplePlants(ctx, plants, languageID, countryID); err != nil {
+		return nil, fmt.Errorf("failed to load common names: %w", err)
 	}
 
 	return &repository.SearchResult{
@@ -192,14 +190,14 @@ func (r *PostgresPlantRepository) Search(ctx context.Context, query string, filt
 }
 
 // FindByFamily finds all plants in a family
-func (r *PostgresPlantRepository) FindByFamily(ctx context.Context, familyName string, limit, offset int) ([]*entity.Plant, error) {
+func (r *PostgresPlantRepository) FindByFamily(ctx context.Context, familyName string, languageID string, countryID *string, limit, offset int) ([]*entity.Plant, error) {
 	filter := repository.DefaultSearchFilter()
 	filter.FamilyName = &familyName
 	filter.Limit = limit
 	filter.Offset = offset
 	filter.SortBy = repository.SortByGenusName
 
-	result, err := r.Search(ctx, "", filter)
+	result, err := r.Search(ctx, "", filter, languageID, countryID)
 	if err != nil {
 		return nil, err
 	}
@@ -208,14 +206,14 @@ func (r *PostgresPlantRepository) FindByFamily(ctx context.Context, familyName s
 }
 
 // FindByGenus finds all plants in a genus
-func (r *PostgresPlantRepository) FindByGenus(ctx context.Context, genusName string, limit, offset int) ([]*entity.Plant, error) {
+func (r *PostgresPlantRepository) FindByGenus(ctx context.Context, genusName string, languageID string, countryID *string, limit, offset int) ([]*entity.Plant, error) {
 	filter := repository.DefaultSearchFilter()
 	filter.GenusName = &genusName
 	filter.Limit = limit
 	filter.Offset = offset
 	filter.SortBy = repository.SortByBotanicalName
 
-	result, err := r.Search(ctx, "", filter)
+	result, err := r.Search(ctx, "", filter, languageID, countryID)
 	if err != nil {
 		return nil, err
 	}
@@ -224,7 +222,7 @@ func (r *PostgresPlantRepository) FindByGenus(ctx context.Context, genusName str
 }
 
 // FindBySpecies finds plants by genus and species name
-func (r *PostgresPlantRepository) FindBySpecies(ctx context.Context, genusName, speciesName string) ([]*entity.Plant, error) {
+func (r *PostgresPlantRepository) FindBySpecies(ctx context.Context, genusName, speciesName, languageID string, countryID *string) ([]*entity.Plant, error) {
 	query := `
 		SELECT
 			p.plant_id,
@@ -287,11 +285,9 @@ func (r *PostgresPlantRepository) FindBySpecies(ctx context.Context, genusName, 
 		return nil, fmt.Errorf("error iterating plants: %w", err)
 	}
 
-	// Load common names
-	for _, plant := range plants {
-		if err := r.loadCommonNames(ctx, plant); err != nil {
-			return nil, fmt.Errorf("failed to load common names: %w", err)
-		}
+	// Load common names (batch loading to avoid N+1 query)
+	if err := r.loadCommonNamesForMultiplePlants(ctx, plants, languageID, countryID); err != nil {
+		return nil, fmt.Errorf("failed to load common names: %w", err)
 	}
 
 	return plants, nil

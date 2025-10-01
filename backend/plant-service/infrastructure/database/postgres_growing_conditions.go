@@ -177,8 +177,8 @@ func (r *PostgresPlantRepository) GetPhysicalCharacteristics(ctx context.Context
 
 	var characteristicID string
 	var sourceID sql.NullString
-	var matureHeightMin, matureHeightTyp, matureHeightMax sql.NullFloat64
-	var matureSpreadMin, matureSpreadTyp, matureSpreadMax sql.NullFloat64
+	var matureHeightMin sql.NullFloat64
+	var matureSpreadMin sql.NullFloat64
 	var growthRate sql.NullString
 	var traitsJSON string
 
@@ -240,9 +240,9 @@ func parseZoneString(zones string) []string {
 		return []string{}
 	}
 	// Split by comma and trim spaces
-	result := make([]string, 0)
-	for _, zone := range pq.Array(&result).Scan(zones); zone != "" {
-		result = append(result, zone)
+	var result []string
+	if err := pq.Array(&result).Scan(zones); err != nil {
+		return []string{}
 	}
 	return result
 }
