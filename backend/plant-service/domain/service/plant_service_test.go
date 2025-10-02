@@ -32,7 +32,7 @@ func TestGetPlant(t *testing.T) {
 	}
 
 	t.Run("successful retrieval", func(t *testing.T) {
-		mockRepo.On("FindByID", ctx, "plant-123").Return(testPlant, nil).Once()
+		mockRepo.On("FindByID", ctx, "plant-123", "en", (*string)(nil)).Return(testPlant, nil).Once()
 
 		result, err := service.GetPlant(ctx, "plant-123", false)
 
@@ -44,7 +44,7 @@ func TestGetPlant(t *testing.T) {
 	})
 
 	t.Run("plant not found", func(t *testing.T) {
-		mockRepo.On("FindByID", ctx, "nonexistent").Return(nil, entity.ErrPlantNotFound).Once()
+		mockRepo.On("FindByID", ctx, "nonexistent", "en", (*string)(nil)).Return(nil, entity.ErrPlantNotFound).Once()
 
 		result, err := service.GetPlant(ctx, "nonexistent", false)
 
@@ -80,16 +80,16 @@ func TestSearchPlants(t *testing.T) {
 					SpeciesName:       "rugosa",
 				},
 			},
-			Total:   1,
-			Limit:   10,
-			Offset:  0,
-			HasMore: false,
-			Query:   "rosa",
+			Total:      1,
+			Limit:      10,
+			NextCursor: nil,
+			HasMore:    false,
+			Query:      "rosa",
 		}
 
 		mockRepo.On("Search", ctx, "rosa", mock.MatchedBy(func(f *repository.SearchFilter) bool {
 			return f.Limit == 10
-		})).Return(expectedResult, nil).Once()
+		}), "en", (*string)(nil)).Return(expectedResult, nil).Once()
 
 		result, err := service.SearchPlants(ctx, "rosa", filter)
 
@@ -112,16 +112,16 @@ func TestSearchPlants(t *testing.T) {
 
 	t.Run("uses default filter when nil", func(t *testing.T) {
 		expectedResult := &repository.SearchResult{
-			Plants:  []*entity.Plant{},
-			Total:   0,
-			Limit:   20,
-			Offset:  0,
-			HasMore: false,
+			Plants:     []*entity.Plant{},
+			Total:      0,
+			Limit:      20,
+			NextCursor: nil,
+			HasMore:    false,
 		}
 
 		mockRepo.On("Search", ctx, "test", mock.MatchedBy(func(f *repository.SearchFilter) bool {
 			return f.Limit == 20 // Default limit
-		})).Return(expectedResult, nil).Once()
+		}), "en", (*string)(nil)).Return(expectedResult, nil).Once()
 
 		result, err := service.SearchPlants(ctx, "test", nil)
 
@@ -144,7 +144,7 @@ func TestFindByBotanicalName(t *testing.T) {
 			SpeciesName:       "rugosa",
 		}
 
-		mockRepo.On("FindByBotanicalName", ctx, "Rosa rugosa").Return(testPlant, nil).Once()
+		mockRepo.On("FindByBotanicalName", ctx, "Rosa rugosa", "en", (*string)(nil)).Return(testPlant, nil).Once()
 
 		result, err := service.FindByBotanicalName(ctx, "Rosa rugosa")
 
@@ -167,7 +167,7 @@ func TestFindByBotanicalName(t *testing.T) {
 			FullBotanicalName: "Rosa rugosa",
 		}
 
-		mockRepo.On("FindByBotanicalName", ctx, "Rosa rugosa").Return(testPlant, nil).Once()
+		mockRepo.On("FindByBotanicalName", ctx, "Rosa rugosa", "en", (*string)(nil)).Return(testPlant, nil).Once()
 
 		result, err := service.FindByBotanicalName(ctx, "  Rosa rugosa  ")
 
@@ -199,7 +199,7 @@ func TestGetCompanionPlants(t *testing.T) {
 			},
 		}
 
-		mockRepo.On("GetCompanions", ctx, "plant-123", mock.MatchedBy(func(f *entity.CompanionFilter) bool {
+		mockRepo.On("GetCompanions", ctx, "plant-123", "en", (*string)(nil), mock.MatchedBy(func(f *entity.CompanionFilter) bool {
 			return f.BeneficialOnly == false
 		})).Return(companions, nil).Once()
 
@@ -220,7 +220,7 @@ func TestGetCompanionPlants(t *testing.T) {
 			},
 		}
 
-		mockRepo.On("GetCompanions", ctx, "plant-123", mock.MatchedBy(func(f *entity.CompanionFilter) bool {
+		mockRepo.On("GetCompanions", ctx, "plant-123", "en", (*string)(nil), mock.MatchedBy(func(f *entity.CompanionFilter) bool {
 			return f.BeneficialOnly == true
 		})).Return(companions, nil).Once()
 
@@ -258,7 +258,7 @@ func TestValidatePlantCompatibility(t *testing.T) {
 			},
 		}
 
-		mockRepo.On("GetCompanions", ctx, "plant-a", mock.Anything).Return(companions, nil).Once()
+		mockRepo.On("GetCompanions", ctx, "plant-a", "en", (*string)(nil), mock.Anything).Return(companions, nil).Once()
 
 		result, err := service.ValidatePlantCompatibility(ctx, "plant-a", "plant-b")
 
@@ -281,7 +281,7 @@ func TestValidatePlantCompatibility(t *testing.T) {
 			},
 		}
 
-		mockRepo.On("GetCompanions", ctx, "plant-a", mock.Anything).Return(companions, nil).Once()
+		mockRepo.On("GetCompanions", ctx, "plant-a", "en", (*string)(nil), mock.Anything).Return(companions, nil).Once()
 
 		result, err := service.ValidatePlantCompatibility(ctx, "plant-a", "plant-c")
 
@@ -293,7 +293,7 @@ func TestValidatePlantCompatibility(t *testing.T) {
 	})
 
 	t.Run("no relationship - assumes neutral", func(t *testing.T) {
-		mockRepo.On("GetCompanions", ctx, "plant-a", mock.Anything).Return([]*entity.Companion{}, nil).Once()
+		mockRepo.On("GetCompanions", ctx, "plant-a", "en", (*string)(nil), mock.Anything).Return([]*entity.Companion{}, nil).Once()
 
 		result, err := service.ValidatePlantCompatibility(ctx, "plant-a", "plant-unknown")
 
@@ -329,7 +329,7 @@ func TestCreatePlant(t *testing.T) {
 		}
 
 		// Check if exists
-		mockRepo.On("FindByBotanicalName", ctx, "Rosa canina").Return(nil, entity.ErrPlantNotFound).Once()
+		mockRepo.On("FindByBotanicalName", ctx, "Rosa canina", "en", (*string)(nil)).Return(nil, entity.ErrPlantNotFound).Once()
 		// Create
 		mockRepo.On("Create", ctx, newPlant).Return(nil).Once()
 
@@ -355,7 +355,7 @@ func TestCreatePlant(t *testing.T) {
 			FullBotanicalName: "Rosa rugosa",
 		}
 
-		mockRepo.On("FindByBotanicalName", ctx, "Rosa rugosa").Return(existingPlant, nil).Once()
+		mockRepo.On("FindByBotanicalName", ctx, "Rosa rugosa", "en", (*string)(nil)).Return(existingPlant, nil).Once()
 
 		err := service.CreatePlant(ctx, newPlant)
 

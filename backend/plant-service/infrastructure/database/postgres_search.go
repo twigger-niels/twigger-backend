@@ -59,6 +59,13 @@ func (r *PostgresPlantRepository) Search(ctx context.Context, query string, filt
 		argPos++
 	}
 
+	// Add cursor filter if provided (for pagination)
+	if filter.Cursor != nil && *filter.Cursor != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("p.plant_id > $%d", argPos))
+		args = append(args, *filter.Cursor)
+		argPos++
+	}
+
 	// Build WHERE clause
 	whereSQL := ""
 	if len(whereClauses) > 0 {
@@ -91,6 +98,9 @@ func (r *PostgresPlantRepository) Search(ctx context.Context, query string, filt
 	} else {
 		orderBySQL += " DESC"
 	}
+
+	// Always add plant_id to ORDER BY for consistent cursor pagination
+	orderBySQL += ", p.plant_id ASC"
 
 	// Count total results
 	countQuery := fmt.Sprintf(`
@@ -128,10 +138,10 @@ func (r *PostgresPlantRepository) Search(ctx context.Context, query string, filt
 		LEFT JOIN cultivars c ON p.cultivar_id = c.cultivar_id
 		%s
 		%s
-		LIMIT $%d OFFSET $%d
-	`, whereSQL, orderBySQL, argPos, argPos+1)
+		LIMIT $%d
+	`, whereSQL, orderBySQL, argPos)
 
-	args = append(args, filter.Limit, filter.Offset)
+	args = append(args, filter.Limit+1) // Fetch one extra to determine if there are more results
 
 	rows, err := r.db.QueryContext(ctx, searchQuery, args...)
 	if err != nil {
@@ -174,18 +184,28 @@ func (r *PostgresPlantRepository) Search(ctx context.Context, query string, filt
 		return nil, fmt.Errorf("error iterating search results: %w", err)
 	}
 
+	// Check if we have more results (we fetched limit+1)
+	hasMore := len(plants) > filter.Limit
+	var nextCursor *string
+	if hasMore {
+		// Remove the extra plant and use its ID as the next cursor
+		lastPlant := plants[len(plants)-1]
+		plants = plants[:filter.Limit]
+		nextCursor = &lastPlant.PlantID
+	}
+
 	// Load common names for all plants (batch loading to avoid N+1 query)
 	if err := r.loadCommonNamesForMultiplePlants(ctx, plants, languageID, countryID); err != nil {
 		return nil, fmt.Errorf("failed to load common names: %w", err)
 	}
 
 	return &repository.SearchResult{
-		Plants:  plants,
-		Total:   total,
-		Limit:   filter.Limit,
-		Offset:  filter.Offset,
-		HasMore: int64(filter.Offset+filter.Limit) < total,
-		Query:   query,
+		Plants:     plants,
+		Total:      total,
+		Limit:      filter.Limit,
+		NextCursor: nextCursor,
+		HasMore:    hasMore,
+		Query:      query,
 	}, nil
 }
 
@@ -194,7 +214,7 @@ func (r *PostgresPlantRepository) FindByFamily(ctx context.Context, familyName s
 	filter := repository.DefaultSearchFilter()
 	filter.FamilyName = &familyName
 	filter.Limit = limit
-	filter.Offset = offset
+	// Note: offset parameter ignored - cursor-based pagination should be used via Search() directly
 	filter.SortBy = repository.SortByGenusName
 
 	result, err := r.Search(ctx, "", filter, languageID, countryID)
@@ -210,7 +230,7 @@ func (r *PostgresPlantRepository) FindByGenus(ctx context.Context, genusName str
 	filter := repository.DefaultSearchFilter()
 	filter.GenusName = &genusName
 	filter.Limit = limit
-	filter.Offset = offset
+	// Note: offset parameter ignored - cursor-based pagination should be used via Search() directly
 	filter.SortBy = repository.SortByBotanicalName
 
 	result, err := r.Search(ctx, "", filter, languageID, countryID)

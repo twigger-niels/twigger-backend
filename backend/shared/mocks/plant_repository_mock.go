@@ -16,8 +16,8 @@ type MockPlantRepository struct {
 }
 
 // FindByID mocks the FindByID method
-func (m *MockPlantRepository) FindByID(ctx context.Context, plantID string) (*entity.Plant, error) {
-	args := m.Called(ctx, plantID)
+func (m *MockPlantRepository) FindByID(ctx context.Context, plantID, languageID string, countryID *string) (*entity.Plant, error) {
+	args := m.Called(ctx, plantID, languageID, countryID)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -25,8 +25,8 @@ func (m *MockPlantRepository) FindByID(ctx context.Context, plantID string) (*en
 }
 
 // FindByIDs mocks the FindByIDs method
-func (m *MockPlantRepository) FindByIDs(ctx context.Context, plantIDs []string) ([]*entity.Plant, error) {
-	args := m.Called(ctx, plantIDs)
+func (m *MockPlantRepository) FindByIDs(ctx context.Context, plantIDs []string, languageID string, countryID *string) ([]*entity.Plant, error) {
+	args := m.Called(ctx, plantIDs, languageID, countryID)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -52,8 +52,8 @@ func (m *MockPlantRepository) Delete(ctx context.Context, plantID string) error 
 }
 
 // Search mocks the Search method
-func (m *MockPlantRepository) Search(ctx context.Context, query string, filter *repository.SearchFilter) (*repository.SearchResult, error) {
-	args := m.Called(ctx, query, filter)
+func (m *MockPlantRepository) Search(ctx context.Context, query string, filter *repository.SearchFilter, languageID string, countryID *string) (*repository.SearchResult, error) {
+	args := m.Called(ctx, query, filter, languageID, countryID)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -61,8 +61,8 @@ func (m *MockPlantRepository) Search(ctx context.Context, query string, filter *
 }
 
 // FindByBotanicalName mocks the FindByBotanicalName method
-func (m *MockPlantRepository) FindByBotanicalName(ctx context.Context, botanicalName string) (*entity.Plant, error) {
-	args := m.Called(ctx, botanicalName)
+func (m *MockPlantRepository) FindByBotanicalName(ctx context.Context, botanicalName, languageID string, countryID *string) (*entity.Plant, error) {
+	args := m.Called(ctx, botanicalName, languageID, countryID)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -70,8 +70,8 @@ func (m *MockPlantRepository) FindByBotanicalName(ctx context.Context, botanical
 }
 
 // FindByCommonName mocks the FindByCommonName method
-func (m *MockPlantRepository) FindByCommonName(ctx context.Context, commonName string) ([]*entity.Plant, error) {
-	args := m.Called(ctx, commonName)
+func (m *MockPlantRepository) FindByCommonName(ctx context.Context, commonName, languageID string, countryID *string) ([]*entity.Plant, error) {
+	args := m.Called(ctx, commonName, languageID, countryID)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -79,8 +79,8 @@ func (m *MockPlantRepository) FindByCommonName(ctx context.Context, commonName s
 }
 
 // FindByFamily mocks the FindByFamily method
-func (m *MockPlantRepository) FindByFamily(ctx context.Context, familyName string, limit, offset int) ([]*entity.Plant, error) {
-	args := m.Called(ctx, familyName, limit, offset)
+func (m *MockPlantRepository) FindByFamily(ctx context.Context, familyName, languageID string, countryID *string, limit, offset int) ([]*entity.Plant, error) {
+	args := m.Called(ctx, familyName, languageID, countryID, limit, offset)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -88,8 +88,8 @@ func (m *MockPlantRepository) FindByFamily(ctx context.Context, familyName strin
 }
 
 // FindByGenus mocks the FindByGenus method
-func (m *MockPlantRepository) FindByGenus(ctx context.Context, genusName string, limit, offset int) ([]*entity.Plant, error) {
-	args := m.Called(ctx, genusName, limit, offset)
+func (m *MockPlantRepository) FindByGenus(ctx context.Context, genusName, languageID string, countryID *string, limit, offset int) ([]*entity.Plant, error) {
+	args := m.Called(ctx, genusName, languageID, countryID, limit, offset)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -97,8 +97,8 @@ func (m *MockPlantRepository) FindByGenus(ctx context.Context, genusName string,
 }
 
 // FindBySpecies mocks the FindBySpecies method
-func (m *MockPlantRepository) FindBySpecies(ctx context.Context, genusName, speciesName string) ([]*entity.Plant, error) {
-	args := m.Called(ctx, genusName, speciesName)
+func (m *MockPlantRepository) FindBySpecies(ctx context.Context, genusName, speciesName, languageID string, countryID *string) ([]*entity.Plant, error) {
+	args := m.Called(ctx, genusName, speciesName, languageID, countryID)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -106,8 +106,8 @@ func (m *MockPlantRepository) FindBySpecies(ctx context.Context, genusName, spec
 }
 
 // GetGrowingConditions mocks the GetGrowingConditions method
-func (m *MockPlantRepository) GetGrowingConditions(ctx context.Context, plantID, countryID string) (*types.GrowingConditions, error) {
-	args := m.Called(ctx, plantID, countryID)
+func (m *MockPlantRepository) GetGrowingConditions(ctx context.Context, plantID, countryID, languageID string) (*types.GrowingConditions, error) {
+	args := m.Called(ctx, plantID, countryID, languageID)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -124,8 +124,8 @@ func (m *MockPlantRepository) FindByGrowingConditions(ctx context.Context, filte
 }
 
 // GetPhysicalCharacteristics mocks the GetPhysicalCharacteristics method
-func (m *MockPlantRepository) GetPhysicalCharacteristics(ctx context.Context, plantID string) (*types.PhysicalCharacteristics, error) {
-	args := m.Called(ctx, plantID)
+func (m *MockPlantRepository) GetPhysicalCharacteristics(ctx context.Context, plantID, languageID string) (*types.PhysicalCharacteristics, error) {
+	args := m.Called(ctx, plantID, languageID)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -133,8 +133,8 @@ func (m *MockPlantRepository) GetPhysicalCharacteristics(ctx context.Context, pl
 }
 
 // GetCompanions mocks the GetCompanions method
-func (m *MockPlantRepository) GetCompanions(ctx context.Context, plantID string, filter *entity.CompanionFilter) ([]*entity.Companion, error) {
-	args := m.Called(ctx, plantID, filter)
+func (m *MockPlantRepository) GetCompanions(ctx context.Context, plantID, languageID string, countryID *string, filter *entity.CompanionFilter) ([]*entity.Companion, error) {
+	args := m.Called(ctx, plantID, languageID, countryID, filter)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -142,8 +142,8 @@ func (m *MockPlantRepository) GetCompanions(ctx context.Context, plantID string,
 }
 
 // GetCompanionsByType mocks the GetCompanionsByType method
-func (m *MockPlantRepository) GetCompanionsByType(ctx context.Context, plantID string, relType types.RelationshipType) ([]*entity.Companion, error) {
-	args := m.Called(ctx, plantID, relType)
+func (m *MockPlantRepository) GetCompanionsByType(ctx context.Context, plantID, languageID string, countryID *string, relType types.RelationshipType) ([]*entity.Companion, error) {
+	args := m.Called(ctx, plantID, languageID, countryID, relType)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}

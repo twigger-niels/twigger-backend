@@ -27,11 +27,11 @@ type PlantRepository interface {
 	FindBySpecies(ctx context.Context, genusName, speciesName, languageID string, countryID *string) ([]*entity.Plant, error)
 
 	// Growing conditions queries
-	GetGrowingConditions(ctx context.Context, plantID, countryID string) (*types.GrowingConditions, error)
+	GetGrowingConditions(ctx context.Context, plantID, countryID, languageID string) (*types.GrowingConditions, error)
 	FindByGrowingConditions(ctx context.Context, filter *GrowingConditionsFilter) ([]*entity.Plant, error)
 
 	// Physical characteristics queries
-	GetPhysicalCharacteristics(ctx context.Context, plantID string) (*types.PhysicalCharacteristics, error)
+	GetPhysicalCharacteristics(ctx context.Context, plantID, languageID string) (*types.PhysicalCharacteristics, error)
 
 	// Companion plant queries (with localization support)
 	GetCompanions(ctx context.Context, plantID, languageID string, countryID *string, filter *entity.CompanionFilter) ([]*entity.Companion, error)
@@ -74,7 +74,7 @@ type SearchFilter struct {
 
 	// Pagination
 	Limit  int
-	Offset int
+	Cursor *string // ID of last item from previous page (for cursor-based pagination)
 
 	// Sorting
 	SortBy    SortField
@@ -106,7 +106,7 @@ type SearchResult struct {
 	Plants     []*entity.Plant `json:"plants"`
 	Total      int64           `json:"total"`
 	Limit      int             `json:"limit"`
-	Offset     int             `json:"offset"`
+	NextCursor *string         `json:"next_cursor,omitempty"` // Cursor for next page
 	HasMore    bool            `json:"has_more"`
 	Query      string          `json:"query,omitempty"`
 }
@@ -140,14 +140,14 @@ type GrowingConditionsFilter struct {
 
 	// Pagination
 	Limit  int
-	Offset int
+	Cursor *string
 }
 
 // DefaultSearchFilter returns a SearchFilter with default values
 func DefaultSearchFilter() *SearchFilter {
 	return &SearchFilter{
 		Limit:     20,
-		Offset:    0,
+		Cursor:    nil,
 		SortBy:    SortByRelevance,
 		SortOrder: SortDesc,
 	}
@@ -159,6 +159,6 @@ func DefaultGrowingConditionsFilter() *GrowingConditionsFilter {
 	return &GrowingConditionsFilter{
 		MinConfidence: &minConfidence,
 		Limit:         20,
-		Offset:        0,
+		Cursor:        nil,
 	}
 }

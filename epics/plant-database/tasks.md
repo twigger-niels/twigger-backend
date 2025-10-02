@@ -7,7 +7,7 @@ This document tracks all development tasks for the Plant Database backend system
 | Part | Status | Completion | Priority | Blockers |
 |------|--------|-----------|----------|----------|
 | Part 1: Database & Infrastructure | ✅ Complete | 100% | P0 | None |
-| Part 2: Plant Domain Service | 🚧 In Progress | 85% | P0 | None |
+| Part 2: Plant Domain Service | 🚧 In Progress | 95% | P0 | None |
 | Part 3: Garden Spatial Service | 📋 Not Started | 0% | P0 | Part 1 ✅ |
 | Part 4: Garden Analysis Engine | 📋 Not Started | 0% | P1 | Parts 1, 3 |
 | Part 5: REST API Gateway | 📋 Not Started | 0% | P0 | Parts 2, 3 |
@@ -16,8 +16,11 @@ This document tracks all development tasks for the Plant Database backend system
 
 ## Recent Major Achievements
 - ✅ **Localization Infrastructure Complete**: 8 tables, 4-tier fallback, language-aware caching
-- ✅ **Performance Optimizations**: Batch loading (96% query reduction), composite indexes
-- ✅ **Code Quality Fixes**: Input validation, cache invalidation, companion localization
+- ✅ **Performance Optimizations**: Batch loading (96% query reduction), composite indexes, cursor-based pagination
+- ✅ **Code Quality Fixes**: Input validation, cache invalidation, companion localization, bubble sort → O(n log n)
+- ✅ **Domain Model Complete**: 11/11 entities with full repository implementations (Country, ClimateZone, Language, DataSource, PlantFamily, PlantGenus, PlantSpecies, Cultivar, PlantSynonym, CountryPlant, PlantProblem)
+- ✅ **Composite Type Handling**: pH range and size_range parsing with proper validation
+- ✅ **Characteristic Translation**: Dynamic translation for enums (SunRequirement, WaterNeeds, etc.)
 - ✅ **Architecture Documentation**: 5 new ADRs (ADR-008 to ADR-012)
 
 ## Task Status Legend
@@ -86,9 +89,9 @@ This document tracks all development tasks for the Plant Database backend system
 ---
 
 ## Part 2: Plant Domain Service
-**Owner**: In Progress | **Status**: 🚧 PARTIALLY COMPLETE (85%) | **Priority**: P0
+**Owner**: In Progress | **Status**: 🚧 NEARLY COMPLETE (95%) | **Priority**: P0
 
-### Critical Bugs (From Code Review)
+### Critical Bugs (From Code Review) ✅ ALL FIXED
 - [x] ✅ Fix syntax error in postgres_growing_conditions.go:244 (FIXED)
 - [x] ✅ Fix incomplete loadCommonNames() implementation (FIXED - queries plant_common_names with fallback)
 - [x] ✅ Fix N+1 query in FindByIDs (FIXED - implemented batch loading methods)
@@ -96,8 +99,11 @@ This document tracks all development tasks for the Plant Database backend system
 - [x] ✅ Fix companion localization hardcoded to English (FIXED - language params threaded through)
 - [x] ✅ Fix cache invalidation for language variants (FIXED - pattern-based invalidation)
 - [x] ✅ Add input validation for language IDs (FIXED - validation.go created)
-- [ ] 📋 Fix bubble sort performance issue (use proper sorting)
-- [ ] 📋 Fix OFFSET pagination (use cursor-based pagination)
+- [x] ✅ Fix bubble sort performance issue (FIXED - replaced with sort.Slice)
+- [x] ✅ Fix OFFSET pagination (FIXED - implemented cursor-based pagination)
+- [x] ✅ Fix pH range composite type handling (FIXED - parsePHRange helper)
+- [x] ✅ Fix size_range composite type handling (FIXED - parseSizeRange helper)
+- [x] ✅ Implement characteristic translation (FIXED - characteristic_translator.go)
 
 ### Localization Integration (CRITICAL - Part 1 dependency) ✅ COMPLETED
 - [x] ✅ Verify migration 005_add_localization.sql has been applied
@@ -114,23 +120,23 @@ This document tracks all development tasks for the Plant Database backend system
 - [x] ✅ Update companion queries to support language parameters
 - [ ] 📋 Update API layer to accept Accept-Language header or user preferences (Part 5 - REST API Gateway)
 
-### Domain Model Tasks
+### Domain Model Tasks ✅ COMPLETED (11/11 entities)
 - [x] ✅ Implement Plant entity with all fields
 - [x] ✅ Implement GrowingConditions value object
 - [x] ✅ Implement CompanionPlant relationships
 - [x] ✅ Create validation rules
 - [ ] 📋 Implement multi-source data consensus
-- [ ] 📋 Add Country entity and repository
-- [ ] 📋 Add ClimateZone entity and repository
-- [ ] 📋 Add Language entity and repository
-- [ ] 📋 Add DataSource entity and repository
-- [ ] 📋 Add PlantFamily entity and repository
-- [ ] 📋 Add PlantGenus entity and repository
-- [ ] 📋 Add PlantSpecies entity and repository
-- [ ] 📋 Add Cultivar entity and repository
-- [ ] 📋 Add PlantSynonym entity and repository
-- [ ] 📋 Add CountryPlant entity and repository
-- [ ] 📋 Add PlantProblem entity and repository
+- [x] ✅ Add Country entity and repository (COMPLETED - with spatial queries)
+- [x] ✅ Add ClimateZone entity and repository (COMPLETED - with spatial queries)
+- [x] ✅ Add Language entity and repository (COMPLETED - ISO code support)
+- [x] ✅ Add DataSource entity and repository (COMPLETED - reliability scoring)
+- [x] ✅ Add PlantFamily entity and repository (COMPLETED - taxonomic hierarchy)
+- [x] ✅ Add PlantGenus entity and repository (COMPLETED - links to family)
+- [x] ✅ Add PlantSpecies entity and repository (COMPLETED - plant type validation)
+- [x] ✅ Add Cultivar entity and repository (COMPLETED - patent tracking)
+- [x] ✅ Add PlantSynonym entity and repository (COMPLETED - botanical name tracking)
+- [x] ✅ Add CountryPlant entity and repository (COMPLETED - native/legal status, GeoJSON)
+- [x] ✅ Add PlantProblem entity and repository (COMPLETED - pest/disease tracking)
 
 ### Repository Tasks - Core Operations
 - [x] ✅ Implement PlantRepository interface
@@ -147,7 +153,7 @@ This document tracks all development tasks for the Plant Database backend system
 
 ### Repository Tasks - Growing Conditions
 - [x] ✅ GetGrowingConditions (basic implementation)
-- [ ] 📋 Fix GetGrowingConditions bugs (simplified pH handling)
+- [x] ✅ Fix GetGrowingConditions bugs (FIXED - pH range composite type parsing)
 - [ ] 📋 Implement FindByGrowingConditions
 - [ ] 📋 Add queries by climate zone
 - [ ] 📋 Add queries by sun requirements
@@ -158,7 +164,7 @@ This document tracks all development tasks for the Plant Database backend system
 
 ### Repository Tasks - Physical Characteristics
 - [x] ✅ GetPhysicalCharacteristics (simplified implementation)
-- [ ] 📋 Fix simplified size_range handling
+- [x] ✅ Fix simplified size_range handling (FIXED - size_range composite type parsing)
 - [ ] 📋 Implement queries by height range
 - [ ] 📋 Implement queries by growth rate
 - [ ] 📋 Implement queries by physical traits (JSONB)
@@ -170,18 +176,18 @@ This document tracks all development tasks for the Plant Database backend system
 - [x] ✅ DeleteCompanionRelationship
 - [x] ✅ Batch loading for companion plant names (loadCompanionPlants)
 
-### Repository Tasks - Missing Infrastructure
-- [ ] 📋 Create CountryRepository (all CRUD operations)
-- [ ] 📋 Create ClimateZoneRepository (spatial queries)
-- [ ] 📋 Create LanguageRepository
-- [ ] 📋 Create DataSourceRepository
-- [ ] 📋 Create PlantFamilyRepository
-- [ ] 📋 Create PlantGenusRepository
-- [ ] 📋 Create PlantSpeciesRepository
-- [ ] 📋 Create CultivarRepository
-- [ ] 📋 Create PlantSynonymRepository
-- [ ] 📋 Create CountryPlantRepository (native status, legal status)
-- [ ] 📋 Create PlantProblemRepository (pests, diseases, deficiencies)
+### Repository Tasks - Additional Infrastructure ✅ COMPLETED
+- [x] ✅ Create CountryRepository (COMPLETED - all CRUD operations, spatial queries with ST_Contains, ST_AsGeoJSON)
+- [x] ✅ Create ClimateZoneRepository (COMPLETED - spatial queries, FindByPoint, FindByCountry)
+- [x] ✅ Create LanguageRepository (COMPLETED - FindByCode, FindActive, ISO support)
+- [x] ✅ Create DataSourceRepository (COMPLETED - FindVerified, reliability filtering)
+- [x] ✅ Create PlantFamilyRepository (COMPLETED - Search, FindByName)
+- [x] ✅ Create PlantGenusRepository (COMPLETED - FindByFamily, Search)
+- [x] ✅ Create PlantSpeciesRepository (COMPLETED - FindByGenus, FindByType)
+- [x] ✅ Create CultivarRepository (COMPLETED - FindByPatent, FindRestricted)
+- [x] ✅ Create PlantSynonymRepository (COMPLETED - FindByOldName, FindByCurrentPlant)
+- [x] ✅ Create CountryPlantRepository (COMPLETED - native status, legal status, GeoJSON native ranges)
+- [x] ✅ Create PlantProblemRepository (COMPLETED - pests, diseases, deficiencies, severity filtering)
 
 ### Service Layer Tasks
 - [x] ✅ Implement PlantService business logic
@@ -209,9 +215,26 @@ This document tracks all development tasks for the Plant Database backend system
 - [ ] 📋 Add authentication middleware
 - [ ] 📋 Add authorization checks
 
+### Code Quality Improvements (From Code Review)
+- [ ] 📋 Standardize repository struct naming to PascalCase (currently mixed lowercase/PascalCase)
+- [ ] 📋 Add GeoJSON validation before ST_GeomFromGeoJSON calls (security hardening)
+- [ ] 📋 Document required GIST indexes for spatial queries (performance)
+- [ ] 📋 Extract ValidClimateSystems constants to shared package (DRY)
+- [ ] 📋 Add lat/lng bounds validation in FindByPoint methods (-90 to 90, -180 to 180)
+- [ ] 📋 Create custom error types (NotFoundError, ValidationError) for consistency
+- [ ] 📋 Implement transaction support across repositories
+- [ ] 📋 Add pagination to FindByPlant/FindByCountry methods (prevent unbounded results)
+- [ ] 📋 Create generic scanning utilities using Go generics (reduce code duplication)
+- [ ] 📋 Add GIN trigram indexes for ILIKE searches (performance)
+- [ ] 📋 Add query performance logging for slow queries (>100ms)
+- [ ] 📋 Implement caching for lookup tables (languages, families, genera)
+- [ ] 📋 Add Godoc comments to all exported functions
+- [ ] 📋 Consider prepared statements for frequently-called queries
+
 ### Testing Tasks
 - [x] ✅ Write unit tests (60% coverage - needs improvement)
 - [x] ✅ Create mock repository for testing
+- [ ] 📋 Add integration tests for all 11 new repositories
 - [ ] 📋 Test localization fallback chain (country+lang -> lang -> en -> raw)
 - [ ] 📋 Test FindByCommonName with different languages
 - [ ] 📋 Test multi-language search functionality
@@ -221,6 +244,8 @@ This document tracks all development tasks for the Plant Database backend system
 - [ ] 📋 Test country-specific name variations (eggplant vs aubergine)
 - [ ] 📋 Increase unit test coverage to >80%
 - [ ] 📋 Create integration tests with real database
+- [ ] 📋 Test spatial queries with GIST indexes
+- [ ] 📋 Test GeoJSON validation and error handling
 - [ ] 📋 Add infrastructure layer tests
 - [ ] 📋 Performance benchmarks
 - [ ] 📋 Load testing

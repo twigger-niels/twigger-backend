@@ -76,9 +76,10 @@ func (r *CachedPlantRepository) Search(ctx context.Context, query string, filter
 	return searchResult, nil
 }
 
-// GetGrowingConditions retrieves growing conditions with caching
-func (r *CachedPlantRepository) GetGrowingConditions(ctx context.Context, plantID, countryID string) (*types.GrowingConditions, error) {
-	key := GrowingConditionsKey(plantID, countryID)
+// GetGrowingConditions retrieves growing conditions with caching (with language support)
+func (r *CachedPlantRepository) GetGrowingConditions(ctx context.Context, plantID, countryID, languageID string) (*types.GrowingConditions, error) {
+	// Include language in cache key for language-specific translations
+	key := fmt.Sprintf("%s:%s", GrowingConditionsKey(plantID, countryID), languageID)
 
 	// Try cache first
 	var gc types.GrowingConditions
@@ -88,7 +89,7 @@ func (r *CachedPlantRepository) GetGrowingConditions(ctx context.Context, plantI
 	}
 
 	// Cache miss - fetch from database
-	result, err := r.repo.GetGrowingConditions(ctx, plantID, countryID)
+	result, err := r.repo.GetGrowingConditions(ctx, plantID, countryID, languageID)
 	if err != nil {
 		return nil, err
 	}
@@ -100,9 +101,10 @@ func (r *CachedPlantRepository) GetGrowingConditions(ctx context.Context, plantI
 	return result, nil
 }
 
-// GetPhysicalCharacteristics retrieves physical characteristics with caching
-func (r *CachedPlantRepository) GetPhysicalCharacteristics(ctx context.Context, plantID string) (*types.PhysicalCharacteristics, error) {
-	key := PhysicalCharacteristicsKey(plantID)
+// GetPhysicalCharacteristics retrieves physical characteristics with caching (with language support)
+func (r *CachedPlantRepository) GetPhysicalCharacteristics(ctx context.Context, plantID, languageID string) (*types.PhysicalCharacteristics, error) {
+	// Include language in cache key for language-specific translations
+	key := fmt.Sprintf("%s:%s", PhysicalCharacteristicsKey(plantID), languageID)
 
 	// Try cache first
 	var pc types.PhysicalCharacteristics
@@ -112,7 +114,7 @@ func (r *CachedPlantRepository) GetPhysicalCharacteristics(ctx context.Context, 
 	}
 
 	// Cache miss - fetch from database
-	result, err := r.repo.GetPhysicalCharacteristics(ctx, plantID)
+	result, err := r.repo.GetPhysicalCharacteristics(ctx, plantID, languageID)
 	if err != nil {
 		return nil, err
 	}

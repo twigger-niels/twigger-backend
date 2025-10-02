@@ -274,6 +274,147 @@ if err := tx.Commit(); err != nil {
 4. **Don't skip validation** - Especially for spatial data
 5. **Don't mix concerns** - Keep domain logic separate from infrastructure
 
+### Critical Repository Implementation Gotchas
+
+#### 10. Every Entity Field MUST Appear in ALL Repository Methods
+**Problem**: Missing fields in SELECT/INSERT/UPDATE queries cause silent data loss
+```go
+// WRONG - Missing patent_expiry field (data loss!)
+query := `
+    SELECT cultivar_id, species_id, cultivar_name, trade_name, patent_number,
+           propagation_restricted, created_at
+    FROM cultivars
+    WHERE cultivar_id = $1
+`
+
+// CORRECT - All entity fields included
+query := `
+    SELECT cultivar_id, species_id, cultivar_name, trade_name, patent_number,
+           patent_expiry, propagation_restricted, created_at
+    FROM cultivars
+    WHERE cultivar_id = $1
+`
+```
+
+**Checklist When Creating Repository Methods**:
+1. ✅ All entity fields in SELECT clause
+2. ✅ Matching number of `Scan()` destinations
+3. ✅ All fields in INSERT VALUES
+4. ✅ All updatable fields in UPDATE SET
+5. ✅ Corresponding ExecContext parameters
+
+**Critical Fields Often Forgotten**:
+- `updated_at` - Must be in SELECT, set in Create (with `created_at`), updated in Update
+- `patent_expiry` / `date_deprecated` - Nullable time fields
+- Enum/status fields with default values
+
+#### 11. Timestamp Handling Pattern (created_at/updated_at)
+**Problem**: Inconsistent timestamp initialization causes tracking issues
+```go
+// WRONG - Missing updated_at initialization in Create
+func (r *Repository) Create(ctx context.Context, entity *Entity) error {
+    query := `INSERT INTO table (id, name, created_at) VALUES ($1, $2, $3)`
+    entity.CreatedAt = time.Now()
+    // Missing: entity.UpdatedAt = entity.CreatedAt
+}
+
+// WRONG - Not updating updated_at in Update
+func (r *Repository) Update(ctx context.Context, entity *Entity) error {
+    query := `UPDATE table SET name = $2 WHERE id = $1`
+    // Missing: entity.UpdatedAt = time.Now()
+}
+
+// CORRECT - Both timestamps managed properly
+func (r *Repository) Create(ctx context.Context, entity *Entity) error {
+    query := `INSERT INTO table (id, name, created_at, updated_at) VALUES ($1, $2, $3, $4)`
+    now := time.Now()
+    entity.CreatedAt = now
+    entity.UpdatedAt = now  // Initialize both to same value
+    _, err := r.db.ExecContext(ctx, query, entity.ID, entity.Name, entity.CreatedAt, entity.UpdatedAt)
+}
+
+func (r *Repository) Update(ctx context.Context, entity *Entity) error {
+    query := `UPDATE table SET name = $2, updated_at = $3 WHERE id = $1`
+    entity.UpdatedAt = time.Now()  // Update timestamp
+    _, err := r.db.ExecContext(ctx, query, entity.ID, entity.Name, entity.UpdatedAt)
+}
+```
+
+**Rule**:
+- **Create**: Set both `created_at` and `updated_at` to `time.Now()`
+- **Update**: Set `updated_at` to `time.Now()`, don't touch `created_at`
+- **SELECT**: Always retrieve both fields from database
+
+#### 12. Scan() Destination Count Must Match SELECT Columns
+**Problem**: Mismatched Scan() arguments cause runtime panics
+```go
+// WRONG - 7 SELECT columns but only 6 Scan destinations
+query := `SELECT id, name, created_at, updated_at, status, email, phone FROM users`
+err := db.Scan(&id, &name, &created_at, &updated_at, &status, &email)  // Missing &phone
+
+// CORRECT - Matching counts
+err := db.Scan(&id, &name, &created_at, &updated_at, &status, &email, &phone)
+```
+
+**Prevention**:
+1. Count SELECT columns vs Scan arguments
+2. Use consistent ordering (entity field declaration order)
+3. Test with actual database queries (integration tests catch this)
+
+#### 13. Nullable Fields Require Pointer Types
+**Problem**: sql.Scan into non-pointer fields fails for NULL values
+```go
+// WRONG - Cannot scan NULL into time.Time
+type Cultivar struct {
+    PatentExpiry time.Time  // Fails if database value is NULL
+}
+
+// CORRECT - Use pointer for nullable fields
+type Cultivar struct {
+    PatentExpiry *time.Time  // Can handle NULL
+}
+
+// Scanning pattern
+var patentExpiry *time.Time
+err := row.Scan(..., &patentExpiry, ...)
+cultivar.PatentExpiry = patentExpiry  // nil if NULL
+```
+
+**Common Nullable Fields**:
+- Optional dates: `*time.Time`
+- Optional foreign keys: `*string`, `*int`
+- Optional enums: `*string`
+
+#### 14. Helper Method scanX() Must Match Query Columns
+**Problem**: Reusable scan helpers hardcode column list, breaks when query changes
+```go
+// Repository has multiple query methods
+func (r *Repository) FindByID(...) { /* SELECT with 8 columns */ }
+func (r *Repository) FindByName(...) { /* SELECT with 8 columns */ }
+func (r *Repository) scanEntities(rows *sql.Rows) { /* Scans 7 columns - BUG! */ }
+
+// CORRECT - Ensure scanX() helpers match ALL queries using them
+func (r *Repository) scanEntities(rows *sql.Rows) ([]*Entity, error) {
+    // Must scan EXACTLY the columns every query SELECTs
+    err := rows.Scan(&e.ID, &e.Name, &e.CreatedAt, &e.UpdatedAt, ...) // All 8 fields
+}
+```
+
+**Verification**:
+1. Grep all queries that call the scan helper: `rg "scanEntities"`
+2. Ensure every SELECT has identical column list
+3. Update scan helper when adding entity fields
+
+**Code Review Checklist for Repositories**:
+- [ ] Every entity field appears in FindByID SELECT
+- [ ] Every entity field has Scan() destination in FindByID
+- [ ] Create includes all fields (including created_at, updated_at)
+- [ ] Update includes all mutable fields plus updated_at
+- [ ] Scan helper methods match ALL queries using them
+- [ ] Nullable fields use pointer types in entity struct
+- [ ] ExecContext parameter count matches INSERT/UPDATE placeholders
+- [ ] Time.Now() called for timestamps (not hardcoded values)
+
 ### Critical Localization Gotchas
 
 #### 1. N+1 Query Risk with Localized Data

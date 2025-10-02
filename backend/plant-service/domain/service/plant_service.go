@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"twigger-backend/backend/plant-service/domain/entity"
@@ -36,7 +37,8 @@ func (s *PlantService) GetPlant(ctx context.Context, plantID string, includeDeta
 
 	if includeDetails {
 		// Load physical characteristics
-		if pc, err := s.repo.GetPhysicalCharacteristics(ctx, plantID); err == nil && pc != nil {
+		// TODO: Extract language from context (for now defaulting to English)
+		if pc, err := s.repo.GetPhysicalCharacteristics(ctx, plantID, "en"); err == nil && pc != nil {
 			plant.PhysicalCharacteristics = pc
 		}
 		// Note: Growing conditions require country_id, so we don't load them here
@@ -53,7 +55,8 @@ func (s *PlantService) GetPlantWithConditions(ctx context.Context, plantID, coun
 	}
 
 	if countryID != "" {
-		gc, err := s.repo.GetGrowingConditions(ctx, plantID, countryID)
+		// TODO: Extract language from context (for now defaulting to English)
+		gc, err := s.repo.GetGrowingConditions(ctx, plantID, countryID, "en")
 		if err == nil && gc != nil {
 			plant.GrowingConditions = gc
 		}
@@ -78,9 +81,6 @@ func (s *PlantService) SearchPlants(ctx context.Context, query string, filter *r
 	// Validate filter
 	if filter.Limit <= 0 || filter.Limit > 100 {
 		filter.Limit = 20
-	}
-	if filter.Offset < 0 {
-		filter.Offset = 0
 	}
 
 	// Perform search - TODO: Pass language context from API layer
@@ -184,7 +184,7 @@ func (s *PlantService) RecommendPlants(ctx context.Context, hardinessZone string
 		HardinessZone:   &hardinessZone,
 		SunRequirements: []types.SunRequirement{sunReq},
 		Limit:           limit,
-		Offset:          0,
+		Cursor:          nil,
 	}
 
 	return s.repo.FindByGrowingConditions(ctx, filter)
@@ -257,14 +257,10 @@ func (s *PlantService) rankSearchResults(plants []*entity.Plant, query string) {
 		scores[plant.PlantID] = plant.SearchScore(query)
 	}
 
-	// Sort plants by score (bubble sort for simplicity - good enough for small result sets)
-	for i := 0; i < len(plants); i++ {
-		for j := i + 1; j < len(plants); j++ {
-			if scores[plants[j].PlantID] > scores[plants[i].PlantID] {
-				plants[i], plants[j] = plants[j], plants[i]
-			}
-		}
-	}
+	// Sort plants by score (descending) using built-in sort
+	sort.Slice(plants, func(i, j int) bool {
+		return scores[plants[i].PlantID] > scores[plants[j].PlantID]
+	})
 }
 
 // CompatibilityResult represents the compatibility between two plants
