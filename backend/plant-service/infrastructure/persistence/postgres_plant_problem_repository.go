@@ -10,16 +10,17 @@ import (
 	"twigger-backend/backend/plant-service/domain/repository"
 )
 
-type postgresPlantProblemRepository struct {
+// PostgresPlantProblemRepository implements PlantProblemRepository using PostgreSQL
+type PostgresPlantProblemRepository struct {
 	db *sql.DB
 }
 
 // NewPostgresPlantProblemRepository creates a new PostgreSQL plant problem repository
 func NewPostgresPlantProblemRepository(db *sql.DB) repository.PlantProblemRepository {
-	return &postgresPlantProblemRepository{db: db}
+	return &PostgresPlantProblemRepository{db: db}
 }
 
-func (r *postgresPlantProblemRepository) FindByID(ctx context.Context, problemID string) (*entity.PlantProblem, error) {
+func (r *PostgresPlantProblemRepository) FindByID(ctx context.Context, problemID string) (*entity.PlantProblem, error) {
 	query := `
 		SELECT problem_id, plant_id, problem_type, severity, created_at, updated_at
 		FROM plant_problems
@@ -46,15 +47,25 @@ func (r *postgresPlantProblemRepository) FindByID(ctx context.Context, problemID
 	return &problem, nil
 }
 
-func (r *postgresPlantProblemRepository) FindByPlant(ctx context.Context, plantID string) ([]*entity.PlantProblem, error) {
+// FindByPlant retrieves problems for a plant with pagination
+func (r *PostgresPlantProblemRepository) FindByPlant(ctx context.Context, plantID string, limit, offset int) ([]*entity.PlantProblem, error) {
+	// Apply default limit if not specified or invalid
+	if limit <= 0 || limit > 1000 {
+		limit = 100 // Default page size
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
 	query := `
 		SELECT problem_id, plant_id, problem_type, severity, created_at, updated_at
 		FROM plant_problems
 		WHERE plant_id = $1
 		ORDER BY severity DESC, problem_type
+		LIMIT $2 OFFSET $3
 	`
 
-	rows, err := r.db.QueryContext(ctx, query, plantID)
+	rows, err := r.db.QueryContext(ctx, query, plantID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query problems by plant: %w", err)
 	}
@@ -63,15 +74,25 @@ func (r *postgresPlantProblemRepository) FindByPlant(ctx context.Context, plantI
 	return r.scanProblems(rows)
 }
 
-func (r *postgresPlantProblemRepository) FindByType(ctx context.Context, plantID, problemType string) ([]*entity.PlantProblem, error) {
+// FindByType retrieves problems of a specific type for a plant with pagination
+func (r *PostgresPlantProblemRepository) FindByType(ctx context.Context, plantID, problemType string, limit, offset int) ([]*entity.PlantProblem, error) {
+	// Apply default limit if not specified or invalid
+	if limit <= 0 || limit > 1000 {
+		limit = 100 // Default page size
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
 	query := `
 		SELECT problem_id, plant_id, problem_type, severity, created_at, updated_at
 		FROM plant_problems
 		WHERE plant_id = $1 AND problem_type = $2
 		ORDER BY severity DESC
+		LIMIT $3 OFFSET $4
 	`
 
-	rows, err := r.db.QueryContext(ctx, query, plantID, problemType)
+	rows, err := r.db.QueryContext(ctx, query, plantID, problemType, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query problems by type: %w", err)
 	}
@@ -80,15 +101,25 @@ func (r *postgresPlantProblemRepository) FindByType(ctx context.Context, plantID
 	return r.scanProblems(rows)
 }
 
-func (r *postgresPlantProblemRepository) FindBySeverity(ctx context.Context, plantID, severity string) ([]*entity.PlantProblem, error) {
+// FindBySeverity retrieves problems of a specific severity for a plant with pagination
+func (r *PostgresPlantProblemRepository) FindBySeverity(ctx context.Context, plantID, severity string, limit, offset int) ([]*entity.PlantProblem, error) {
+	// Apply default limit if not specified or invalid
+	if limit <= 0 || limit > 1000 {
+		limit = 100 // Default page size
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
 	query := `
 		SELECT problem_id, plant_id, problem_type, severity, created_at, updated_at
 		FROM plant_problems
 		WHERE plant_id = $1 AND severity = $2
 		ORDER BY problem_type
+		LIMIT $3 OFFSET $4
 	`
 
-	rows, err := r.db.QueryContext(ctx, query, plantID, severity)
+	rows, err := r.db.QueryContext(ctx, query, plantID, severity, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query problems by severity: %w", err)
 	}
@@ -97,7 +128,7 @@ func (r *postgresPlantProblemRepository) FindBySeverity(ctx context.Context, pla
 	return r.scanProblems(rows)
 }
 
-func (r *postgresPlantProblemRepository) Create(ctx context.Context, problem *entity.PlantProblem) error {
+func (r *PostgresPlantProblemRepository) Create(ctx context.Context, problem *entity.PlantProblem) error {
 	if err := problem.Validate(); err != nil {
 		return fmt.Errorf("validation failed: %w", err)
 	}
@@ -127,7 +158,7 @@ func (r *postgresPlantProblemRepository) Create(ctx context.Context, problem *en
 	return nil
 }
 
-func (r *postgresPlantProblemRepository) Update(ctx context.Context, problem *entity.PlantProblem) error {
+func (r *PostgresPlantProblemRepository) Update(ctx context.Context, problem *entity.PlantProblem) error {
 	if err := problem.Validate(); err != nil {
 		return fmt.Errorf("validation failed: %w", err)
 	}
@@ -164,7 +195,7 @@ func (r *postgresPlantProblemRepository) Update(ctx context.Context, problem *en
 	return nil
 }
 
-func (r *postgresPlantProblemRepository) Delete(ctx context.Context, problemID string) error {
+func (r *PostgresPlantProblemRepository) Delete(ctx context.Context, problemID string) error {
 	query := `DELETE FROM plant_problems WHERE problem_id = $1`
 
 	result, err := r.db.ExecContext(ctx, query, problemID)
@@ -185,7 +216,7 @@ func (r *postgresPlantProblemRepository) Delete(ctx context.Context, problemID s
 }
 
 // Helper method to scan problems
-func (r *postgresPlantProblemRepository) scanProblems(rows *sql.Rows) ([]*entity.PlantProblem, error) {
+func (r *PostgresPlantProblemRepository) scanProblems(rows *sql.Rows) ([]*entity.PlantProblem, error) {
 	var problems []*entity.PlantProblem
 	for rows.Next() {
 		var problem entity.PlantProblem

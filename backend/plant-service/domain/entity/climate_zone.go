@@ -3,6 +3,8 @@ package entity
 import (
 	"fmt"
 	"time"
+
+	"twigger-backend/backend/shared/constants"
 )
 
 // ClimateZone represents a climatic zone with spatial boundaries
@@ -31,14 +33,8 @@ func (cz *ClimateZone) Validate() error {
 		return fmt.Errorf("zone_code is required")
 	}
 
-	// Validate zone system
-	validSystems := map[string]bool{
-		"USDA": true,
-		"RHS":  true,
-		"AHS":  true,
-	}
-
-	if !validSystems[cz.ZoneSystem] {
+	// Validate zone system using shared constants
+	if !constants.IsValidClimateSystem(cz.ZoneSystem) {
 		return fmt.Errorf("invalid zone_system: %s (must be USDA, RHS, or AHS)", cz.ZoneSystem)
 	}
 

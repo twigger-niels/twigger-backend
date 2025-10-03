@@ -1,0 +1,50 @@
+services:
+  postgres-test:
+    image: postgis/postgis:17-3.5
+    container_name: twigger-test-db
+    environment:
+      POSTGRES_DB: plantdb_test
+      POSTGRES_USER: plant_api_test
+      POSTGRES_PASSWORD: test_password_123
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d/migrations
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U plant_api_test -d plantdb_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - test-network
+
+  # PostGIS extension setup (runs after postgres is ready)
+  postgis-setup:
+    image: postgis/postgis:17-3.5
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: test_password_123
+    networks:
+      - test-network
+    command: >
+      bash -c "
+        echo 'Waiting for PostgreSQL to be ready...' &&
+        sleep 2 &&
+        psql -h postgres-test -U plant_api_test -d plantdb_test -c 'CREATE EXTENSION IF NOT EXISTS postgis;' &&
+        psql -h postgres-test -U plant_api_test -d plantdb_test -c 'CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";' &&
+        psql -h postgres-test -U plant_api_test -d plantdb_test -c 'SELECT PostGIS_version();' &&
+        echo 'PostGIS extension installed successfully'
+      "
+    restart: "no"
+
+volumes:
+  postgres_test_data:
+    driver: local
+
+networks:
+  test-network:
+    driver: bridge

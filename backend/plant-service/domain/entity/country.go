@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/lib/pq"
+	"twigger-backend/backend/shared/constants"
 )
 
 // Country represents a geographical country with climate data
@@ -37,15 +38,9 @@ func (c *Country) Validate() error {
 		return fmt.Errorf("at least one climate system is required")
 	}
 
-	// Validate climate systems
-	validSystems := map[string]bool{
-		"USDA": true,
-		"RHS":  true,
-		"AHS":  true, // American Horticultural Society
-	}
-
+	// Validate climate systems using shared constants
 	for _, system := range c.ClimateSystems {
-		if !validSystems[system] {
+		if !constants.IsValidClimateSystem(system) {
 			return fmt.Errorf("invalid climate system: %s (must be USDA, RHS, or AHS)", system)
 		}
 	}

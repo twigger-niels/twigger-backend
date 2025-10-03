@@ -11,8 +11,8 @@ type ClimateZoneRepository interface {
 	// FindByID retrieves a climate zone by its UUID
 	FindByID(ctx context.Context, zoneID string) (*entity.ClimateZone, error)
 
-	// FindByCountry retrieves all climate zones for a specific country
-	FindByCountry(ctx context.Context, countryID string) ([]*entity.ClimateZone, error)
+	// FindByCountry retrieves climate zones for a specific country with pagination
+	FindByCountry(ctx context.Context, countryID string, limit, offset int) ([]*entity.ClimateZone, error)
 
 	// FindByCountryAndSystem retrieves zones for a country and climate system
 	FindByCountryAndSystem(ctx context.Context, countryID, zoneSystem string) ([]*entity.ClimateZone, error)

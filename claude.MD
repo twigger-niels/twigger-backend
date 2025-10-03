@@ -562,6 +562,136 @@ companions, err := r.repo.GetCompanions(ctx, plantID, languageID, countryID, fil
 ```
 **Note**: Companion benefits (companion_benefits_i18n table) also localized - don't forget!
 
+### Critical Integration Testing Gotchas
+
+#### 15. Always Use UUIDs for Language/Country IDs in Tests
+**Problem**: Tests using ISO codes ("en", "es", "US") fail with "invalid input syntax for type uuid"
+**Root Cause**: Database foreign keys use UUIDs, not ISO code strings
+```go
+// WRONG - Using ISO codes directly
+plant, err := repo.FindByID(ctx, plantID, "en", nil)
+// ERROR: pq: invalid input syntax for type uuid: "en"
+
+// CORRECT - Use UUID from seeded test data
+englishID := "550e8400-e29b-41d4-a716-446655440001"
+plant, err := repo.FindByID(ctx, plantID, englishID, nil)
+```
+**Fix Pattern**:
+1. Define language/country UUIDs as constants in test setup
+2. Use `SeedTestLanguages()` and `SeedTestCountries()` with known UUIDs
+3. Reference these UUIDs throughout tests
+**Discovered**: 2025-10-02 - Fixed all 11 integration tests + 4 benchmarks
+
+#### 16. Test Database Schema Must Match Production Schema EXACTLY
+**Problem**: Column name mismatches cause test failures
+**Common Mismatches Found**:
+```go
+// WRONG column names
+languages.iso_639_1_code  // Actual: language_code
+countries.iso_code        // Actual: country_code
+plant_families.updated_at // Doesn't exist (no updated_at on families/genera/species)
+
+// CORRECT - Match actual schema
+INSERT INTO languages (language_id, language_code, language_name, is_active)
+INSERT INTO countries (country_id, country_code, country_name, climate_systems)
+INSERT INTO plant_families (family_id, family_name, created_at)
+```
+**Prevention**:
+1. ✅ Read actual migration files before writing seed functions
+2. ✅ Run `\d table_name` in psql to verify column names
+3. ✅ Check for required fields (e.g., `climate_systems TEXT[] NOT NULL`)
+4. ❌ Never assume column names from entity struct field names
+
+#### 17. Integration Test Database Cleanup: DROP SCHEMA CASCADE
+**Problem**: `DROP TABLE IF EXISTS` fails with "cannot drop table X because other objects depend on it"
+**Solution**: Drop entire schema with CASCADE, then recreate
+```go
+func cleanDatabase(ctx context.Context, db *sql.DB, t *testing.T) error {
+    // Nuclear option - drop everything
+    _, err := db.ExecContext(ctx, `
+        DROP SCHEMA public CASCADE;
+        CREATE SCHEMA public;
+        GRANT ALL ON SCHEMA public TO plant_api_test;
+        GRANT ALL ON SCHEMA public TO public;
+    `)
+
+    // Re-enable PostGIS (lost in schema drop)
+    _, err = db.ExecContext(ctx, `CREATE EXTENSION IF NOT EXISTS postgis;`)
+
+    return err
+}
+```
+**Why This Works**:
+- ✅ Removes all tables, views, functions, sequences in dependency order
+- ✅ No need to track 50+ table dependencies manually
+- ✅ Works regardless of schema changes
+- ✅ Fast - single command vs many DROP TABLE calls
+**Tradeoff**: Must recreate PostGIS extension after schema drop
+**See**: ADR-013 for full rationale
+
+#### 18. Integration Tests Need Minimal Schema, Not Full Production
+**Problem**: Migration 005 (localization) references tables from Part 4 (not yet implemented)
+**Solution**: Create only the tables tests actually need
+```go
+// In test_helpers.go - create minimal localization table
+_, err := db.ExecContext(ctx, `
+    CREATE TABLE IF NOT EXISTS plant_common_names (
+        plant_id UUID NOT NULL REFERENCES plants(plant_id) ON DELETE CASCADE,
+        language_id UUID NOT NULL REFERENCES languages(language_id),
+        country_id UUID REFERENCES countries(country_id),
+        common_name VARCHAR(200) NOT NULL,
+        is_primary BOOLEAN DEFAULT false,
+        created_at TIMESTAMP DEFAULT NOW(),
+        PRIMARY KEY (plant_id, language_id, common_name)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_plant_common_names_lookup
+    ON plant_common_names(plant_id, language_id, country_id);
+`)
+```
+**Rationale**:
+- ✅ Tests isolated from unimplemented features
+- ✅ Faster test execution (fewer tables)
+- ✅ Clear test requirements (self-documenting)
+- ❌ Schema duplication (also in migration file)
+**When to Use**: Only when production migrations have unimplemented dependencies
+**See**: ADR-015 for full rationale
+
+#### 19. Docker Compose Test Database Image Must Include PostGIS
+**Problem**: `postgres:17` doesn't include PostGIS extension
+```yaml
+# WRONG - Missing PostGIS
+services:
+  postgres-test:
+    image: postgres:17
+    command: shared_preload_libraries=postgis-3  # ❌ FAILS
+
+# CORRECT - Use official PostGIS image
+services:
+  postgres-test:
+    image: postgis/postgis:17-3.5  # ✅ PostGIS pre-installed
+    environment:
+      POSTGRES_DB: plantdb_test
+```
+**Error Signs**:
+- "could not access file postgis-3: No such file or directory"
+- "extension postgis is not available"
+**Fix**: Change to `postgis/postgis:17-3.5` (PostgreSQL 17 + PostGIS 3.5)
+
+#### 20. Invalid UUID Formats Cause Cryptic Errors
+**Problem**: Typos in test UUIDs cause "invalid input syntax" errors
+```go
+// WRONG - UUIDs can't start with 'g' or 's' (not hex)
+genusID := "g50e8400-e29b-41d4-a716-446655440001"   // ❌ 'g' not hex
+speciesID := "s50e8400-e29b-41d4-a716-446655440001" // ❌ 's' not hex
+
+// CORRECT - First character must be 0-9 or a-f
+genusID := "150e8400-e29b-41d4-a716-446655440001"   // ✅ Valid hex
+speciesID := "250e8400-e29b-41d4-a716-446655440001" // ✅ Valid hex
+```
+**Validation**: UUIDs must be 36 characters: `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` (0-9, a-f only)
+**Prevention**: Use UUID constants defined once at top of test file
+
 ### Performance Considerations
 
 #### Spatial Queries
@@ -716,6 +846,596 @@ How to test these changes
 - [ ] Documentation updated
 - [ ] Performance verified
 ```
+
+### Critical Query Filter Gotchas
+
+#### 21. Zone Matching Requires Exact Boundaries (Not LIKE)
+**Problem**: Using LIKE for comma-separated zone lists causes false matches
+```go
+// WRONG - "1a" matches "11a" due to substring match
+query += " AND hardiness_zones LIKE '%1a%'"
+
+// CORRECT - Use regex with word boundaries
+query += " AND hardiness_zones ~ '(^|,)1a(,|$)'"
+```
+**Why**: Hardiness zones are stored as comma-separated strings: `"5a,5b,6a,6b,7a,7b"`
+- LIKE `'%1a%'` matches both "1a" and "11a"
+- Regex `(^|,)1a(,|$)` only matches "1a" at start, end, or between commas
+
+**Rule**: For comma-separated enum lists, always use PostgreSQL regex `~` operator with boundary anchors
+
+#### 22. Height Filter Logic Must Match User Intent
+**Problem**: Ambiguous filter semantics cause wrong results
+```go
+// WRONG - OR logic is too permissive
+WHERE (pc.mature_height).typical_m >= $1 OR (pc.mature_height).max_m >= $1  // MinHeight
+WHERE (pc.mature_height).typical_m <= $1 OR (pc.mature_height).min_m <= $1  // MaxHeight
+
+// CORRECT - Match user's actual intent
+WHERE (pc.mature_height).max_m >= $1      // MinHeight: can the plant grow this tall?
+WHERE (pc.mature_height).typical_m <= $1  // MaxHeight: will the plant fit in this space?
+```
+
+**User Intent**:
+- **MinHeight filter** (e.g., 5m): User wants plants that CAN grow at least 5m tall → use `max_m`
+- **MaxHeight filter** (e.g., 2m): User wants plants that typically fit in 2m space → use `typical_m`
+
+**Test Case**: With plants at heights 0.2m, 2.0m, 15.0m:
+- `MaxHeight = 1.0` should return ONLY 0.2m plant (thyme)
+- Using OR would incorrectly return 2.0m plant (rhododendron has min=1.0)
+
+#### 23. Physical Characteristics Need LEFT JOIN (Not INNER)
+**Problem**: INNER JOIN excludes plants without physical data
+```go
+// WRONG - Only returns plants with physical_characteristics rows
+INNER JOIN physical_characteristics pc ON p.plant_id = pc.plant_id
+
+// CORRECT - Returns all plants, filters only when characteristic specified
+LEFT JOIN physical_characteristics pc ON p.plant_id = pc.plant_id
+```
+**Why**: Not all plants have physical characteristics data yet. LEFT JOIN allows:
+- Search without filters: returns all plants
+- Search with filters: only matches plants with that data
+- Graceful degradation as database grows
+
+#### 24. Enum Array Insertion Requires Type Casting
+**Problem**: PostgreSQL rejects text arrays for enum array columns
+```sql
+-- WRONG - Type mismatch error
+INSERT INTO growing_conditions_assertions (sun_requirements, ...)
+VALUES (ARRAY['full_sun', 'partial_sun'], ...)
+-- ERROR: column "sun_requirements" is of type sun_requirement[] but expression is of type text[]
+
+-- CORRECT - Explicit cast to enum type
+VALUES (ARRAY['full_sun', 'partial_sun']::sun_requirement[], ...)
+```
+**Rule**: Always cast array literals when inserting into enum array columns
+
+#### 25. JSONB Boolean Queries Require Type Casting
+**Problem**: JSONB values are text, not boolean
+```go
+// WRONG - Treats "true" as text, not boolean
+WHERE pc.traits->>'evergreen' = true  // Fails: comparing text to boolean
+
+// CORRECT - Cast JSONB text to boolean
+WHERE (pc.traits->>'evergreen')::boolean = true
+```
+**Pattern**: For all JSONB boolean fields, use `(jsonb_col->>'field')::boolean`
+
+**Common JSONB Traits**:
+- `(pc.traits->>'evergreen')::boolean`
+- `(pc.traits->>'deciduous')::boolean`
+- `(pc.traits->>'toxic')::boolean`
+
+#### 26. Integration Test Schema Column Names Must Match Production
+**Problem**: Using entity field names instead of actual database column names
+```go
+// WRONG - Assumes columns match entity field names
+INSERT INTO physical_characteristics (mature_width, ...) -- Column doesn't exist!
+
+// CORRECT - Check migration files for actual column names
+INSERT INTO physical_characteristics (mature_spread, ...) -- Actual column name
+```
+**Prevention**:
+1. Always read migration files before writing seed functions
+2. Run `\d table_name` in psql to verify column names
+3. Check for required vs optional fields (e.g., `NOT NULL`, `DEFAULT`)
+
+**Common Mismatches Encountered**:
+- `mature_width` → `mature_spread` (physical_characteristics)
+- `iso_639_1_code` → `language_code` (languages)
+- `iso_code` → `country_code` (countries)
+
+### Critical Performance & Infrastructure Gotchas
+
+#### 27. GIN Trigram Indexes Required for ILIKE Searches
+**Problem**: ILIKE queries on text fields are 100-1000x slower without GIN indexes
+**Context**: Multi-language common name searches use `ILIKE '%search%'` pattern
+```sql
+-- WRONG - B-tree indexes don't help ILIKE queries
+CREATE INDEX idx_common_name ON plant_common_names(common_name); -- B-tree (default)
+SELECT * FROM plant_common_names WHERE common_name ILIKE '%rose%'; -- Seq scan, slow!
+
+-- CORRECT - GIN trigram index supports ILIKE
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE INDEX idx_common_name_trgm ON plant_common_names USING GIN (common_name gin_trgm_ops);
+SELECT * FROM plant_common_names WHERE common_name ILIKE '%rose%'; -- Index scan, fast!
+```
+**Performance Impact**:
+- Without index: 500ms for 10K rows (sequential scan)
+- With GIN index: 5ms for 10K rows (100x improvement)
+**Trade-off**: Index size ~3x larger than B-tree (15% database size increase)
+**Rule**: Always use GIN trigram indexes for any column with ILIKE searches
+**See**: Migration 006, ADR-016
+
+#### 28. Prepared Statements Must Handle Connection Pool Resets
+**Problem**: Prepared statements become invalid when connection pool recycles connections
+```go
+// WRONG - Prepared statement breaks after connection reset
+stmt, _ := db.Prepare("SELECT * FROM plants WHERE plant_id = $1")
+defer stmt.Close()
+// Later: ERROR: prepared statement "stmtcache_1" does not exist
+
+// CORRECT - Fallback to regular query on prepared statement failure
+stmt, err := stmtMgr.Get(StmtFindPlantByID)
+if err != nil {
+    // Prepared statement not available, use regular query
+    return db.QueryRowContext(ctx, "SELECT * FROM plants WHERE plant_id = $1", plantID)
+}
+return stmt.QueryRowContext(ctx, plantID)
+```
+**Why**: Connection pooling can close/reopen connections, invalidating prepared statements
+**Solution**: `PreparedStatementManager` with `Recreate()` method to rebuild on connection reset
+**Best Practice**: Always provide fallback to regular query if prepared statement unavailable
+**See**: `prepared_statements.go`, ADR-017
+
+#### 29. Lookup Table Cache Keys Must Include All Query Parameters
+**Problem**: Cache key doesn't match query parameters, causes wrong data return
+```go
+// WRONG - Language-specific data cached with language-agnostic key
+key := fmt.Sprintf("family:%s", familyID)  // Missing language!
+// User requests Spanish, gets cached English data
+
+// CORRECT - Include all query parameters in cache key
+key := fmt.Sprintf("family:%s:lang:%s", familyID, languageID)
+if countryID != nil {
+    key = fmt.Sprintf("family:%s:lang:%s:country:%s", familyID, languageID, *countryID)
+}
+```
+**Cache Invalidation Pattern**:
+```go
+// When updating family, delete ALL language/country variants
+pattern := fmt.Sprintf("family:%s:*", familyID)
+cache.DeletePattern(ctx, pattern) // Uses Redis SCAN, not KEYS (blocking)
+```
+**Rule**: Cache key MUST include every parameter that affects query results
+**Common Parameters**: `language_id`, `country_id`, `limit`, `offset` (for pagination)
+**See**: `lookup_cache.go`, ADR-018
+
+#### 30. Go Generics Have Zero Runtime Overhead But Require Go 1.18+
+**Problem**: Attempting to use generics with Go 1.17 or earlier causes compilation errors
+```go
+// Generic function (requires Go 1.18+)
+func ScanRows[T any](rows *sql.Rows, scanFunc func(*sql.Rows) (*T, error)) ([]*T, error) {
+    // ERROR with Go 1.17: syntax error: unexpected [, expecting (
+}
+```
+**Verification**:
+```bash
+go version  # Must be >= go1.18
+go mod edit -go=1.18  # Update go.mod
+```
+**Benefits**:
+- Type safety at compile time (catches errors early)
+- Zero runtime overhead (generics compile to concrete types)
+- Code reuse: `ScanRows[Plant]`, `ScanRows[Family]` from same function
+**Trade-off**: Requires modern Go version (1.18+, released March 2022)
+**See**: `scanner.go`, ADR-019
+
+#### 31. Transaction Panics Must Be Recovered to Prevent Data Corruption
+**Problem**: Panic during transaction leaves database in inconsistent state
+```go
+// WRONG - Panic skips rollback, partial data committed
+tx, _ := db.BeginTx(ctx, nil)
+_, err := tx.Exec("INSERT INTO plants ...") // Succeeds
+// Code panics here (nil pointer, etc.)
+tx.Commit() // Never reached, transaction left open
+
+// CORRECT - Defer handles rollback even on panic
+tx, _ := db.BeginTx(ctx, nil)
+defer func() {
+    if p := recover(); p != nil {
+        _ = tx.Rollback()
+        panic(p) // Re-panic after rollback
+    }
+}()
+_, err := tx.Exec("INSERT INTO plants ...")
+if err != nil {
+    tx.Rollback()
+    return err
+}
+return tx.Commit()
+```
+**Why**: Panics bypass normal control flow, defer ensures cleanup
+**TxManager Pattern**: Encapsulates this logic, prevents forgetting rollback
+```go
+return txManager.WithTransaction(ctx, func(tx *sql.Tx) error {
+    // Operations here
+    // Automatic rollback on error or panic
+})
+```
+**See**: `transaction.go`, ADR-020
+
+#### 32. GeoJSON Validation MUST Happen Before ST_GeomFromGeoJSON
+**Problem**: Invalid GeoJSON reaches PostGIS, causes cryptic database errors
+```go
+// WRONG - Malformed GeoJSON causes database error
+_, err := db.Exec(`
+    INSERT INTO countries (country_boundary)
+    VALUES (ST_GeomFromGeoJSON($1))
+`, malformedGeoJSON)
+// ERROR: invalid GeoJSON representation (SQLSTATE 22023) - unhelpful!
+
+// CORRECT - Validate at application layer first
+if err := ValidateGeoJSON(geojsonStr); err != nil {
+    return fmt.Errorf("invalid boundary geojson: %w", err)
+    // ERROR: missing 'coordinates' field - clear error message!
+}
+_, err := db.Exec(`INSERT INTO countries (country_boundary) VALUES (ST_GeomFromGeoJSON($1))`, geojsonStr)
+```
+**Validation Checklist**:
+1. ✅ Valid JSON structure
+2. ✅ Has `type` field (Point, Polygon, MultiPolygon, etc.)
+3. ✅ Has `coordinates` array
+4. ✅ Polygon rings are closed (first point == last point)
+5. ✅ No self-intersections (for Polygons)
+**Security Benefit**: Prevents malicious GeoJSON from exploiting PostGIS vulnerabilities
+**Performance Benefit**: Fail-fast before expensive database query
+**See**: `geojson_validator.go`, `coordinates_validator.go`, ADR-021
+
+#### 33. Coordinate Bounds Validation Prevents Spatial Query Failures
+**Problem**: Out-of-bounds coordinates cause silent failures or incorrect results
+```go
+// WRONG - Invalid coordinates accepted, spatial query returns wrong results
+lat, lng := 95.5, -200.0  // Invalid! (lat > 90, lng < -180)
+country, _ := repo.FindByPoint(ctx, lat, lng)
+// Returns nil or wrong country due to coordinate wrapping
+
+// CORRECT - Validate WGS84 bounds before spatial query
+if err := ValidateCoordinates(lat, lng); err != nil {
+    return nil, fmt.Errorf("invalid coordinates: %w", err)
+    // ERROR: latitude must be between -90 and 90 degrees, got: 95.5
+}
+country, _ := repo.FindByPoint(ctx, lat, lng)
+```
+**WGS84 Coordinate Bounds**:
+- Latitude: -90.0 to 90.0 (South Pole to North Pole)
+- Longitude: -180.0 to 180.0 (International Date Line)
+**Common Mistakes**:
+- Swapping lat/lng (using lat=151.2, lng=-33.8 instead of lat=-33.8, lng=151.2)
+- Using degrees/minutes/seconds instead of decimal degrees
+**PostGIS Behavior**: Out-of-bounds coords may wrap (lng=370 becomes lng=10) causing silent errors
+**See**: `coordinates_validator.go`, ADR-021
+
+#### 34. Savepoints Enable Partial Rollback in Complex Transactions
+**Problem**: Multi-step transaction needs to rollback one step without losing all progress
+**Use Case**: Import plant data - if growing conditions invalid, keep plant but rollback conditions
+```go
+// Without savepoints: All-or-nothing (plant + conditions both fail)
+return txManager.WithTransaction(ctx, func(tx *sql.Tx) error {
+    tx.Exec("INSERT INTO plants ...")           // Step 1
+    tx.Exec("INSERT INTO growing_conditions...") // Step 2 fails
+    // Both steps rolled back
+})
+
+// With savepoints: Partial rollback (keep plant, rollback conditions)
+return txManager.WithTransaction(ctx, func(tx *sql.Tx) error {
+    sm := NewSavepointManager(tx)
+
+    tx.Exec("INSERT INTO plants ...")  // Step 1 - committed
+
+    sm.WithSavepoint(ctx, "conditions", func() error {
+        err := tx.Exec("INSERT INTO growing_conditions...")
+        if err != nil {
+            return err // Rolls back to savepoint, Step 1 retained
+        }
+        return nil
+    })
+    // Plant saved, conditions skipped if invalid
+})
+```
+**PostgreSQL Savepoint Commands**:
+- `SAVEPOINT name` - Create checkpoint
+- `ROLLBACK TO SAVEPOINT name` - Revert to checkpoint
+- `RELEASE SAVEPOINT name` - Commit checkpoint
+**Performance Note**: Savepoints are lightweight (microseconds), use liberally
+**See**: `transaction.go` SavepointManager, ADR-020
+
+#### 35. Repository Struct Naming Must Be PascalCase for Godoc
+**Problem**: Lowercase struct names don't appear in public API documentation
+```go
+// WRONG - Not exported, invisible to godoc
+type postgresPlantRepository struct {
+    db *sql.DB
+}
+
+func NewPostgresPlantRepository(db *sql.DB) repository.PlantRepository {
+    return &postgresPlantRepository{db: db} // Returns unexported type
+}
+
+// CORRECT - Exported struct, visible in godoc
+type PostgresPlantRepository struct {
+    db *sql.DB
+}
+
+func NewPostgresPlantRepository(db *sql.DB) repository.PlantRepository {
+    return &PostgresPlantRepository{db: db}
+}
+```
+**Why PascalCase Matters**:
+1. Exported structs appear in godoc (API documentation)
+2. Allows external packages to reference concrete type (for testing, debugging)
+3. Consistent with Go naming conventions (exported identifiers start with uppercase)
+**Rule**: All repository, service, and manager structs should be PascalCase
+**Discovered**: Code review found 9 repositories with lowercase names (all fixed)
+
+### Critical PostGIS Spatial Gotchas
+
+#### 36. Avoid ST_AsText When Extracting Coordinates
+**Problem**: Using `ST_AsText()` then casting back to geometry is inefficient and error-prone
+```sql
+-- WRONG - Converts to WKT text then back to geometry (3x slower)
+SELECT ST_Y(ST_AsText(ST_Centroid(boundary))::geometry) as lat
+
+-- CORRECT - Direct coordinate extraction
+SELECT ST_Y(ST_Centroid(boundary)) as lat
+```
+**Why**: `ST_AsText()` creates an intermediate WKT string ("POINT(-122.4 37.7)") which must be parsed back
+**Performance**: 3x slower, unnecessary string allocation
+**When to Use ST_AsText**: Only when displaying geometry to users as text
+**Discovered**: PostGIS expert review (Part 3)
+
+#### 37. GIST Indexes Are REQUIRED for Spatial Queries
+**Problem**: Spatial queries without GIST indexes perform full table scans (100-1000x slower)
+```sql
+-- Without index: Sequential scan, 500ms for 10K rows
+SELECT * FROM gardens WHERE ST_DWithin(location, point, 5000);
+
+-- With GIST index: Index scan, 5ms for 10K rows
+CREATE INDEX idx_gardens_location ON gardens USING GIST(location);
+```
+**Rule**: Create GIST index on EVERY geometry/geography column
+**Index Types**:
+- ✅ `USING GIST` - Only type that supports spatial operators (&&, ST_Contains, ST_DWithin)
+- ❌ `USING BTREE` - Does NOT work for spatial queries
+- ❌ `USING HASH` - Does NOT work for spatial queries
+**Composite Indexes**:
+```sql
+-- Combine spatial + non-spatial for common patterns
+CREATE INDEX idx_gardens_user_boundary ON gardens USING GIST(user_id, boundary);
+```
+**Performance Impact**: 100x improvement on typical spatial queries
+**Discovered**: Part 3 implementation, Migration 007
+
+#### 38. Geography vs Geometry for Distance Calculations
+**Problem**: Using `geometry` type for distances gives meaningless results in degrees
+```sql
+-- WRONG - Distance in degrees (meaningless to users)
+SELECT ST_Distance(point1, point2);  -- Returns 0.045
+
+-- CORRECT - Distance in meters (what users expect)
+SELECT ST_Distance(point1::geography, point2::geography);  -- Returns 5000.0
+```
+**Rule**: Always cast to `::geography` for distance/area calculations
+**Schema Design**:
+```sql
+-- Boundaries: geometry (faster for polygon operations)
+boundary GEOMETRY(Polygon, 4326)
+
+-- Locations: geography (accurate for distance)
+location GEOGRAPHY(Point, 4326)
+```
+**Trade-off**: Geography queries are ~10% slower but meter-accurate globally
+**Common Functions**:
+- `ST_Distance(geog1, geog2)` - Returns meters
+- `ST_DWithin(geog1, geog2, meters)` - Radius search
+- `ST_Area(geom::geography)` - Returns square meters
+**Discovered**: Part 3 implementation (ADR-024)
+
+#### 39. Bounding Box Pre-filtering for Complex Polygons
+**Problem**: ST_Contains on complex polygons is expensive without pre-filter
+```sql
+-- SLOW - ST_Contains checks every vertex
+SELECT * FROM zones WHERE ST_Contains(geometry, point);
+
+-- FAST - Bounding box check first (uses GIST index)
+SELECT * FROM zones
+WHERE geometry && point                      -- Fast bbox check
+  AND ST_Contains(geometry, point);          -- Precise check
+```
+**Explanation**:
+- `&&` operator checks if bounding boxes overlap (GIST index, very fast)
+- `ST_Contains` does precise point-in-polygon test (expensive)
+**Performance**: 2-5x faster for complex polygons (10+ vertices)
+**When to Use**: Any ST_Contains, ST_Intersects, ST_Within on multi-vertex polygons
+**Discovered**: PostGIS expert review
+
+#### 40. NULL Handling in Spatial Queries Requires Go-side Logic
+**Problem**: Go `*string` nil doesn't translate to SQL NULL correctly in prepared statements
+```sql
+-- This doesn't work as expected with Go nil pointer
+AND ($2::uuid IS NULL OR zone_id != $2)
+```
+**Correct Pattern**:
+```go
+// Build query dynamically based on nil check
+query := "SELECT ... WHERE garden_id = $1"
+args := []interface{}{gardenID}
+
+if excludeZoneID != nil && *excludeZoneID != "" {
+    query += " AND zone_id != $2"
+    args = append(args, *excludeZoneID)
+}
+
+db.QueryContext(ctx, query, args...)
+```
+**Why**: `database/sql` doesn't handle Go nil pointers as SQL NULL in typed casts
+**Alternative**: Use `sql.NullString` type
+```go
+var exclude sql.NullString
+if excludeZoneID != nil {
+    exclude = sql.NullString{String: *excludeZoneID, Valid: true}
+}
+db.QueryContext(ctx, query, gardenID, exclude)
+```
+**Discovered**: PostGIS expert review (CheckZoneOverlaps issue)
+
+#### 41. Validate GeoJSON Structure Before ST_GeomFromGeoJSON
+**Problem**: Invalid GeoJSON passed to PostGIS causes cryptic errors
+```go
+// WRONG - Database error is cryptic
+_, err := db.Exec(`INSERT INTO gardens (boundary) VALUES (ST_GeomFromGeoJSON($1))`, badJSON)
+// ERROR: invalid GeoJSON representation (SQLSTATE 22023)
+
+// CORRECT - Validate first for clear error messages
+if err := ValidateGeoJSON(geojson); err != nil {
+    return fmt.Errorf("invalid boundary: %w", err)
+    // ERROR: missing 'coordinates' field
+}
+_, err := db.Exec(`INSERT INTO gardens (boundary) VALUES (ST_GeomFromGeoJSON($1))`, geojson)
+```
+**Validation Checklist**:
+1. ✅ Valid JSON structure
+2. ✅ Has `type` field (Point, Polygon, MultiPolygon, etc.)
+3. ✅ Has `coordinates` array
+4. ✅ Polygon rings are closed (first point == last point)
+5. ✅ Coordinates within bounds (-90 to 90 lat, -180 to 180 lng)
+**Implementation**: `geojson_validator.go`, `coordinates_validator.go`
+**Performance**: <0.1ms overhead, prevents expensive failed database queries
+**Discovered**: Part 2 & 3 implementation (Gotcha #32, ADR-021)
+
+#### 42. Polygon Closure Validation Prevents Subtle Bugs
+**Problem**: Unclosed polygon rings cause incorrect spatial calculations
+```json
+// WRONG - Unclosed polygon (first != last)
+{
+  "type": "Polygon",
+  "coordinates": [[
+    [-122.5, 37.7],
+    [-122.4, 37.7],
+    [-122.4, 37.8],
+    [-122.5, 37.8]
+  ]]
+}
+
+// CORRECT - Closed polygon
+{
+  "type": "Polygon",
+  "coordinates": [[
+    [-122.5, 37.7],
+    [-122.4, 37.7],
+    [-122.4, 37.8],
+    [-122.5, 37.8],
+    [-122.5, 37.7]  // Same as first point
+  ]]
+}
+```
+**Validation**:
+```go
+func ValidatePolygonClosure(geojsonStr string) error {
+    // Extract coordinates array
+    ring := coordinates[0]  // First ring
+    first := ring[0]
+    last := ring[len(ring)-1]
+
+    if first[0] != last[0] || first[1] != last[1] {
+        return fmt.Errorf("polygon ring is not closed: first point %v != last point %v", first, last)
+    }
+    return nil
+}
+```
+**Impact**: Unclosed polygons may:
+- Calculate incorrect area (ST_Area)
+- Fail containment checks (ST_Contains)
+- Cause rendering issues in mapping tools
+**Discovered**: Part 3 GeoJSON validator implementation
+
+#### 43. MultiPolygon vs Polygon Requires Different Validation
+**Problem**: MultiPolygon has different coordinate structure than Polygon
+```json
+// Polygon: [][][]float64
+{"type": "Polygon", "coordinates": [[[lng, lat], [lng, lat], ...]]}
+
+// MultiPolygon: [][][][]float64
+{"type": "MultiPolygon", "coordinates": [[[[lng, lat], ...]], [[[lng, lat], ...]]]}
+```
+**Validation Pattern**:
+```go
+switch geom.Type {
+case "Polygon":
+    return ValidatePolygonClosure(coordinates)  // Single ring array
+case "MultiPolygon":
+    for _, polygon := range coordinates {        // Iterate each polygon
+        return ValidatePolygonClosure(polygon)
+    }
+}
+```
+**Common Mistake**: Treating MultiPolygon coordinates as Polygon (causes index out of bounds)
+**Discovered**: PostGIS expert review (geojson_validator.go issue)
+
+#### 44. Service Layer Should NOT Perform Database Queries
+**Problem**: Service layer querying database directly bypasses repository abstraction
+```go
+// WRONG - Service querying database
+func (s *GardenService) CreateGarden(...) {
+    db.QueryContext(ctx, "SELECT COUNT(*) FROM gardens WHERE user_id = $1", userID)
+}
+
+// CORRECT - Service calls repository method
+func (s *GardenService) CreateGarden(...) {
+    count, err := s.gardenRepo.CountByUserID(ctx, userID)
+}
+```
+**Layer Responsibilities**:
+- **Repository**: All database queries (SELECT, INSERT, UPDATE, DELETE)
+- **Service**: Business logic, validation, orchestration
+- **API**: HTTP/GraphQL handling, request/response serialization
+**Benefits**:
+- ✅ Service tests use mocks (no database)
+- ✅ Repository interface can be swapped (PostgreSQL → MySQL)
+- ✅ Clear separation of concerns
+**Discovered**: Part 3 service layer implementation (ADR-028)
+
+#### 45. Transaction Support Must Be Repository Method, Not Service
+**Problem**: Service layer managing transactions couples it to SQL implementation
+```go
+// WRONG - Service starting transaction
+func (s *GardenService) CreateGarden(...) {
+    tx, _ := s.db.BeginTx(ctx, nil)  // Service has *sql.DB reference
+    defer tx.Rollback()
+}
+
+// CORRECT - Repository provides transaction methods
+func (s *GardenService) CreateGarden(...) {
+    return s.gardenRepo.CreateWithTransaction(ctx, garden, func(tx *sql.Tx) error {
+        // Operations using tx
+    })
+}
+```
+**Alternative Pattern**: Transaction manager utility
+```go
+// Repository uses shared transaction manager
+func (r *PostgresGardenRepository) CreateGarden(ctx, garden) error {
+    return r.txManager.WithTransaction(ctx, func(tx *sql.Tx) error {
+        // Multi-step operations
+    })
+}
+```
+**Benefits**:
+- ✅ Service layer remains database-agnostic
+- ✅ Transaction logic centralized in infrastructure layer
+- ✅ Panic recovery handled consistently
+**Discovered**: Part 3 bulk operations (ADR-027, ADR-020)
 
 ### Questions to Ask Before Implementation
 

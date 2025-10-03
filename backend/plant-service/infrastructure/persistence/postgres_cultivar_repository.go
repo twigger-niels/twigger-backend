@@ -10,16 +10,17 @@ import (
 	"twigger-backend/backend/plant-service/domain/repository"
 )
 
-type postgresCultivarRepository struct {
+// PostgresCultivarRepository implements CultivarRepository using PostgreSQL
+type PostgresCultivarRepository struct {
 	db *sql.DB
 }
 
 // NewPostgresCultivarRepository creates a new PostgreSQL cultivar repository
 func NewPostgresCultivarRepository(db *sql.DB) repository.CultivarRepository {
-	return &postgresCultivarRepository{db: db}
+	return &PostgresCultivarRepository{db: db}
 }
 
-func (r *postgresCultivarRepository) FindByID(ctx context.Context, cultivarID string) (*entity.Cultivar, error) {
+func (r *PostgresCultivarRepository) FindByID(ctx context.Context, cultivarID string) (*entity.Cultivar, error) {
 	query := `
 		SELECT cultivar_id, species_id, cultivar_name, trade_name, patent_number,
 		       patent_expiry, propagation_restricted, created_at
@@ -49,7 +50,7 @@ func (r *postgresCultivarRepository) FindByID(ctx context.Context, cultivarID st
 	return &cultivar, nil
 }
 
-func (r *postgresCultivarRepository) FindBySpecies(ctx context.Context, speciesID string) ([]*entity.Cultivar, error) {
+func (r *PostgresCultivarRepository) FindBySpecies(ctx context.Context, speciesID string) ([]*entity.Cultivar, error) {
 	query := `
 		SELECT cultivar_id, species_id, cultivar_name, trade_name, patent_number,
 		       patent_expiry, propagation_restricted, created_at
@@ -67,7 +68,7 @@ func (r *postgresCultivarRepository) FindBySpecies(ctx context.Context, speciesI
 	return r.scanCultivars(rows)
 }
 
-func (r *postgresCultivarRepository) FindByPatent(ctx context.Context, patentNumber string) (*entity.Cultivar, error) {
+func (r *PostgresCultivarRepository) FindByPatent(ctx context.Context, patentNumber string) (*entity.Cultivar, error) {
 	query := `
 		SELECT cultivar_id, species_id, cultivar_name, trade_name, patent_number,
 		       patent_expiry, propagation_restricted, created_at
@@ -97,7 +98,7 @@ func (r *postgresCultivarRepository) FindByPatent(ctx context.Context, patentNum
 	return &cultivar, nil
 }
 
-func (r *postgresCultivarRepository) FindByTradeName(ctx context.Context, tradeName string) ([]*entity.Cultivar, error) {
+func (r *PostgresCultivarRepository) FindByTradeName(ctx context.Context, tradeName string) ([]*entity.Cultivar, error) {
 	query := `
 		SELECT cultivar_id, species_id, cultivar_name, trade_name, patent_number,
 		       patent_expiry, propagation_restricted, created_at
@@ -115,7 +116,7 @@ func (r *postgresCultivarRepository) FindByTradeName(ctx context.Context, tradeN
 	return r.scanCultivars(rows)
 }
 
-func (r *postgresCultivarRepository) FindRestricted(ctx context.Context) ([]*entity.Cultivar, error) {
+func (r *PostgresCultivarRepository) FindRestricted(ctx context.Context) ([]*entity.Cultivar, error) {
 	query := `
 		SELECT cultivar_id, species_id, cultivar_name, trade_name, patent_number,
 		       patent_expiry, propagation_restricted, created_at
@@ -133,7 +134,7 @@ func (r *postgresCultivarRepository) FindRestricted(ctx context.Context) ([]*ent
 	return r.scanCultivars(rows)
 }
 
-func (r *postgresCultivarRepository) Search(ctx context.Context, query string, limit int) ([]*entity.Cultivar, error) {
+func (r *PostgresCultivarRepository) Search(ctx context.Context, query string, limit int) ([]*entity.Cultivar, error) {
 	sqlQuery := `
 		SELECT cultivar_id, species_id, cultivar_name, trade_name, patent_number,
 		       patent_expiry, propagation_restricted, created_at
@@ -152,7 +153,7 @@ func (r *postgresCultivarRepository) Search(ctx context.Context, query string, l
 	return r.scanCultivars(rows)
 }
 
-func (r *postgresCultivarRepository) Create(ctx context.Context, cultivar *entity.Cultivar) error {
+func (r *PostgresCultivarRepository) Create(ctx context.Context, cultivar *entity.Cultivar) error {
 	if err := cultivar.Validate(); err != nil {
 		return fmt.Errorf("validation failed: %w", err)
 	}
@@ -183,7 +184,7 @@ func (r *postgresCultivarRepository) Create(ctx context.Context, cultivar *entit
 	return nil
 }
 
-func (r *postgresCultivarRepository) Update(ctx context.Context, cultivar *entity.Cultivar) error {
+func (r *PostgresCultivarRepository) Update(ctx context.Context, cultivar *entity.Cultivar) error {
 	if err := cultivar.Validate(); err != nil {
 		return fmt.Errorf("validation failed: %w", err)
 	}
@@ -221,7 +222,7 @@ func (r *postgresCultivarRepository) Update(ctx context.Context, cultivar *entit
 	return nil
 }
 
-func (r *postgresCultivarRepository) Delete(ctx context.Context, cultivarID string) error {
+func (r *PostgresCultivarRepository) Delete(ctx context.Context, cultivarID string) error {
 	query := `DELETE FROM cultivars WHERE cultivar_id = $1`
 
 	result, err := r.db.ExecContext(ctx, query, cultivarID)
@@ -242,7 +243,7 @@ func (r *postgresCultivarRepository) Delete(ctx context.Context, cultivarID stri
 }
 
 // Helper method to scan cultivars
-func (r *postgresCultivarRepository) scanCultivars(rows *sql.Rows) ([]*entity.Cultivar, error) {
+func (r *PostgresCultivarRepository) scanCultivars(rows *sql.Rows) ([]*entity.Cultivar, error) {
 	var cultivars []*entity.Cultivar
 	for rows.Next() {
 		var cultivar entity.Cultivar

@@ -10,11 +10,11 @@ type CountryPlantRepository interface {
 	// FindByID retrieves a country-plant relationship by its ID
 	FindByID(ctx context.Context, countryPlantID string) (*entity.CountryPlant, error)
 
-	// FindByCountry retrieves all plant relationships for a country
-	FindByCountry(ctx context.Context, countryID string) ([]*entity.CountryPlant, error)
+	// FindByCountry retrieves plant relationships for a country with pagination
+	FindByCountry(ctx context.Context, countryID string, limit, offset int) ([]*entity.CountryPlant, error)
 
-	// FindByPlant retrieves all country relationships for a plant
-	FindByPlant(ctx context.Context, plantID string) ([]*entity.CountryPlant, error)
+	// FindByPlant retrieves country relationships for a plant with pagination
+	FindByPlant(ctx context.Context, plantID string, limit, offset int) ([]*entity.CountryPlant, error)
 
 	// FindByCountryAndPlant retrieves a specific country-plant relationship
 	FindByCountryAndPlant(ctx context.Context, countryID, plantID string) (*entity.CountryPlant, error)

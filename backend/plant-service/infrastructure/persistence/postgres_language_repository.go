@@ -10,16 +10,18 @@ import (
 	"twigger-backend/backend/plant-service/domain/repository"
 )
 
-type postgresLanguageRepository struct {
+// PostgresLanguageRepository implements LanguageRepository using PostgreSQL
+type PostgresLanguageRepository struct {
 	db *sql.DB
 }
 
 // NewPostgresLanguageRepository creates a new PostgreSQL language repository
 func NewPostgresLanguageRepository(db *sql.DB) repository.LanguageRepository {
-	return &postgresLanguageRepository{db: db}
+	return &PostgresLanguageRepository{db: db}
 }
 
-func (r *postgresLanguageRepository) FindByID(ctx context.Context, languageID string) (*entity.Language, error) {
+// FindByID retrieves a language by its UUID
+func (r *PostgresLanguageRepository) FindByID(ctx context.Context, languageID string) (*entity.Language, error) {
 	query := `
 		SELECT language_id, language_code, language_name, native_name, is_active, created_at
 		FROM languages
@@ -46,7 +48,8 @@ func (r *postgresLanguageRepository) FindByID(ctx context.Context, languageID st
 	return &lang, nil
 }
 
-func (r *postgresLanguageRepository) FindByCode(ctx context.Context, languageCode string) (*entity.Language, error) {
+// FindByCode retrieves a language by its ISO 639 language code
+func (r *PostgresLanguageRepository) FindByCode(ctx context.Context, languageCode string) (*entity.Language, error) {
 	query := `
 		SELECT language_id, language_code, language_name, native_name, is_active, created_at
 		FROM languages
@@ -73,7 +76,8 @@ func (r *postgresLanguageRepository) FindByCode(ctx context.Context, languageCod
 	return &lang, nil
 }
 
-func (r *postgresLanguageRepository) FindAll(ctx context.Context) ([]*entity.Language, error) {
+// FindAll retrieves all languages
+func (r *PostgresLanguageRepository) FindAll(ctx context.Context) ([]*entity.Language, error) {
 	query := `
 		SELECT language_id, language_code, language_name, native_name, is_active, created_at
 		FROM languages
@@ -109,7 +113,8 @@ func (r *postgresLanguageRepository) FindAll(ctx context.Context) ([]*entity.Lan
 	return languages, nil
 }
 
-func (r *postgresLanguageRepository) FindActive(ctx context.Context) ([]*entity.Language, error) {
+// FindActive retrieves all active languages
+func (r *PostgresLanguageRepository) FindActive(ctx context.Context) ([]*entity.Language, error) {
 	query := `
 		SELECT language_id, language_code, language_name, native_name, is_active, created_at
 		FROM languages
@@ -146,7 +151,8 @@ func (r *postgresLanguageRepository) FindActive(ctx context.Context) ([]*entity.
 	return languages, nil
 }
 
-func (r *postgresLanguageRepository) Create(ctx context.Context, language *entity.Language) error {
+// Create creates a new language
+func (r *PostgresLanguageRepository) Create(ctx context.Context, language *entity.Language) error {
 	if err := language.Validate(); err != nil {
 		return fmt.Errorf("validation failed: %w", err)
 	}
@@ -174,7 +180,8 @@ func (r *postgresLanguageRepository) Create(ctx context.Context, language *entit
 	return nil
 }
 
-func (r *postgresLanguageRepository) Update(ctx context.Context, language *entity.Language) error {
+// Update updates an existing language
+func (r *PostgresLanguageRepository) Update(ctx context.Context, language *entity.Language) error {
 	if err := language.Validate(); err != nil {
 		return fmt.Errorf("validation failed: %w", err)
 	}
@@ -209,7 +216,8 @@ func (r *postgresLanguageRepository) Update(ctx context.Context, language *entit
 	return nil
 }
 
-func (r *postgresLanguageRepository) Delete(ctx context.Context, languageID string) error {
+// Delete deletes a language by ID
+func (r *PostgresLanguageRepository) Delete(ctx context.Context, languageID string) error {
 	query := `DELETE FROM languages WHERE language_id = $1`
 
 	result, err := r.db.ExecContext(ctx, query, languageID)

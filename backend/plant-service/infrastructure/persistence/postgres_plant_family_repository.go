@@ -10,16 +10,17 @@ import (
 	"twigger-backend/backend/plant-service/domain/repository"
 )
 
-type postgresPlantFamilyRepository struct {
+// PostgresPlantFamilyRepository implements PlantFamilyRepository using PostgreSQL
+type PostgresPlantFamilyRepository struct {
 	db *sql.DB
 }
 
 // NewPostgresPlantFamilyRepository creates a new PostgreSQL plant family repository
 func NewPostgresPlantFamilyRepository(db *sql.DB) repository.PlantFamilyRepository {
-	return &postgresPlantFamilyRepository{db: db}
+	return &PostgresPlantFamilyRepository{db: db}
 }
 
-func (r *postgresPlantFamilyRepository) FindByID(ctx context.Context, familyID string) (*entity.PlantFamily, error) {
+func (r *PostgresPlantFamilyRepository) FindByID(ctx context.Context, familyID string) (*entity.PlantFamily, error) {
 	query := `
 		SELECT family_id, family_name, common_name, created_at
 		FROM plant_families
@@ -44,7 +45,7 @@ func (r *postgresPlantFamilyRepository) FindByID(ctx context.Context, familyID s
 	return &family, nil
 }
 
-func (r *postgresPlantFamilyRepository) FindByName(ctx context.Context, familyName string) (*entity.PlantFamily, error) {
+func (r *PostgresPlantFamilyRepository) FindByName(ctx context.Context, familyName string) (*entity.PlantFamily, error) {
 	query := `
 		SELECT family_id, family_name, common_name, created_at
 		FROM plant_families
@@ -69,7 +70,7 @@ func (r *postgresPlantFamilyRepository) FindByName(ctx context.Context, familyNa
 	return &family, nil
 }
 
-func (r *postgresPlantFamilyRepository) FindAll(ctx context.Context) ([]*entity.PlantFamily, error) {
+func (r *PostgresPlantFamilyRepository) FindAll(ctx context.Context) ([]*entity.PlantFamily, error) {
 	query := `
 		SELECT family_id, family_name, common_name, created_at
 		FROM plant_families
@@ -85,7 +86,7 @@ func (r *postgresPlantFamilyRepository) FindAll(ctx context.Context) ([]*entity.
 	return r.scanFamilies(rows)
 }
 
-func (r *postgresPlantFamilyRepository) Search(ctx context.Context, query string, limit int) ([]*entity.PlantFamily, error) {
+func (r *PostgresPlantFamilyRepository) Search(ctx context.Context, query string, limit int) ([]*entity.PlantFamily, error) {
 	sqlQuery := `
 		SELECT family_id, family_name, common_name, created_at
 		FROM plant_families
@@ -103,7 +104,7 @@ func (r *postgresPlantFamilyRepository) Search(ctx context.Context, query string
 	return r.scanFamilies(rows)
 }
 
-func (r *postgresPlantFamilyRepository) Create(ctx context.Context, family *entity.PlantFamily) error {
+func (r *PostgresPlantFamilyRepository) Create(ctx context.Context, family *entity.PlantFamily) error {
 	if err := family.Validate(); err != nil {
 		return fmt.Errorf("validation failed: %w", err)
 	}
@@ -129,7 +130,7 @@ func (r *postgresPlantFamilyRepository) Create(ctx context.Context, family *enti
 	return nil
 }
 
-func (r *postgresPlantFamilyRepository) Update(ctx context.Context, family *entity.PlantFamily) error {
+func (r *PostgresPlantFamilyRepository) Update(ctx context.Context, family *entity.PlantFamily) error {
 	if err := family.Validate(); err != nil {
 		return fmt.Errorf("validation failed: %w", err)
 	}
@@ -162,7 +163,7 @@ func (r *postgresPlantFamilyRepository) Update(ctx context.Context, family *enti
 	return nil
 }
 
-func (r *postgresPlantFamilyRepository) Delete(ctx context.Context, familyID string) error {
+func (r *PostgresPlantFamilyRepository) Delete(ctx context.Context, familyID string) error {
 	query := `DELETE FROM plant_families WHERE family_id = $1`
 
 	result, err := r.db.ExecContext(ctx, query, familyID)
@@ -183,7 +184,7 @@ func (r *postgresPlantFamilyRepository) Delete(ctx context.Context, familyID str
 }
 
 // Helper method to scan families
-func (r *postgresPlantFamilyRepository) scanFamilies(rows *sql.Rows) ([]*entity.PlantFamily, error) {
+func (r *PostgresPlantFamilyRepository) scanFamilies(rows *sql.Rows) ([]*entity.PlantFamily, error) {
 	var families []*entity.PlantFamily
 	for rows.Next() {
 		var family entity.PlantFamily

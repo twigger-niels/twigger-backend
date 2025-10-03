@@ -10,16 +10,18 @@ import (
 	"twigger-backend/backend/plant-service/domain/repository"
 )
 
-type postgresDataSourceRepository struct {
+// PostgresDataSourceRepository implements DataSourceRepository using PostgreSQL
+type PostgresDataSourceRepository struct {
 	db *sql.DB
 }
 
 // NewPostgresDataSourceRepository creates a new PostgreSQL data source repository
 func NewPostgresDataSourceRepository(db *sql.DB) repository.DataSourceRepository {
-	return &postgresDataSourceRepository{db: db}
+	return &PostgresDataSourceRepository{db: db}
 }
 
-func (r *postgresDataSourceRepository) FindByID(ctx context.Context, sourceID string) (*entity.DataSource, error) {
+// FindByID retrieves a data source by its UUID
+func (r *PostgresDataSourceRepository) FindByID(ctx context.Context, sourceID string) (*entity.DataSource, error) {
 	query := `
 		SELECT source_id, source_name, source_type, website_url,
 		       reliability_score, last_verified, created_at
@@ -48,7 +50,8 @@ func (r *postgresDataSourceRepository) FindByID(ctx context.Context, sourceID st
 	return &source, nil
 }
 
-func (r *postgresDataSourceRepository) FindAll(ctx context.Context) ([]*entity.DataSource, error) {
+// FindAll retrieves all data sources
+func (r *PostgresDataSourceRepository) FindAll(ctx context.Context) ([]*entity.DataSource, error) {
 	query := `
 		SELECT source_id, source_name, source_type, website_url,
 		       reliability_score, last_verified, created_at
@@ -65,7 +68,8 @@ func (r *postgresDataSourceRepository) FindAll(ctx context.Context) ([]*entity.D
 	return r.scanDataSources(rows)
 }
 
-func (r *postgresDataSourceRepository) FindByType(ctx context.Context, sourceType string) ([]*entity.DataSource, error) {
+// FindByType retrieves all data sources of a specific type
+func (r *PostgresDataSourceRepository) FindByType(ctx context.Context, sourceType string) ([]*entity.DataSource, error) {
 	query := `
 		SELECT source_id, source_name, source_type, website_url,
 		       reliability_score, last_verified, created_at
@@ -83,7 +87,8 @@ func (r *postgresDataSourceRepository) FindByType(ctx context.Context, sourceTyp
 	return r.scanDataSources(rows)
 }
 
-func (r *postgresDataSourceRepository) FindVerified(ctx context.Context) ([]*entity.DataSource, error) {
+// FindVerified retrieves all verified data sources ordered by reliability
+func (r *PostgresDataSourceRepository) FindVerified(ctx context.Context) ([]*entity.DataSource, error) {
 	query := `
 		SELECT source_id, source_name, source_type, website_url,
 		       reliability_score, last_verified, created_at
@@ -101,7 +106,8 @@ func (r *postgresDataSourceRepository) FindVerified(ctx context.Context) ([]*ent
 	return r.scanDataSources(rows)
 }
 
-func (r *postgresDataSourceRepository) Create(ctx context.Context, source *entity.DataSource) error {
+// Create creates a new data source
+func (r *PostgresDataSourceRepository) Create(ctx context.Context, source *entity.DataSource) error {
 	if err := source.Validate(); err != nil {
 		return fmt.Errorf("validation failed: %w", err)
 	}
@@ -131,7 +137,8 @@ func (r *postgresDataSourceRepository) Create(ctx context.Context, source *entit
 	return nil
 }
 
-func (r *postgresDataSourceRepository) Update(ctx context.Context, source *entity.DataSource) error {
+// Update updates an existing data source
+func (r *PostgresDataSourceRepository) Update(ctx context.Context, source *entity.DataSource) error {
 	if err := source.Validate(); err != nil {
 		return fmt.Errorf("validation failed: %w", err)
 	}
@@ -168,7 +175,8 @@ func (r *postgresDataSourceRepository) Update(ctx context.Context, source *entit
 	return nil
 }
 
-func (r *postgresDataSourceRepository) Delete(ctx context.Context, sourceID string) error {
+// Delete deletes a data source by ID
+func (r *PostgresDataSourceRepository) Delete(ctx context.Context, sourceID string) error {
 	query := `DELETE FROM data_sources WHERE source_id = $1`
 
 	result, err := r.db.ExecContext(ctx, query, sourceID)
@@ -188,8 +196,8 @@ func (r *postgresDataSourceRepository) Delete(ctx context.Context, sourceID stri
 	return nil
 }
 
-// Helper method to scan data sources
-func (r *postgresDataSourceRepository) scanDataSources(rows *sql.Rows) ([]*entity.DataSource, error) {
+// scanDataSources is a helper method to scan multiple data source rows
+func (r *PostgresDataSourceRepository) scanDataSources(rows *sql.Rows) ([]*entity.DataSource, error) {
 	var sources []*entity.DataSource
 	for rows.Next() {
 		var source entity.DataSource

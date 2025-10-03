@@ -10,16 +10,17 @@ import (
 	"twigger-backend/backend/plant-service/domain/repository"
 )
 
-type postgresPlantSpeciesRepository struct {
+// PostgresPlantSpeciesRepository implements PlantSpeciesRepository using PostgreSQL
+type PostgresPlantSpeciesRepository struct {
 	db *sql.DB
 }
 
 // NewPostgresPlantSpeciesRepository creates a new PostgreSQL plant species repository
 func NewPostgresPlantSpeciesRepository(db *sql.DB) repository.PlantSpeciesRepository {
-	return &postgresPlantSpeciesRepository{db: db}
+	return &PostgresPlantSpeciesRepository{db: db}
 }
 
-func (r *postgresPlantSpeciesRepository) FindByID(ctx context.Context, speciesID string) (*entity.PlantSpecies, error) {
+func (r *PostgresPlantSpeciesRepository) FindByID(ctx context.Context, speciesID string) (*entity.PlantSpecies, error) {
 	query := `
 		SELECT species_id, genus_id, species_name, plant_type, created_at
 		FROM plant_species
@@ -45,7 +46,7 @@ func (r *postgresPlantSpeciesRepository) FindByID(ctx context.Context, speciesID
 	return &species, nil
 }
 
-func (r *postgresPlantSpeciesRepository) FindByGenus(ctx context.Context, genusID string) ([]*entity.PlantSpecies, error) {
+func (r *PostgresPlantSpeciesRepository) FindByGenus(ctx context.Context, genusID string) ([]*entity.PlantSpecies, error) {
 	query := `
 		SELECT species_id, genus_id, species_name, plant_type, created_at
 		FROM plant_species
@@ -62,7 +63,7 @@ func (r *postgresPlantSpeciesRepository) FindByGenus(ctx context.Context, genusI
 	return r.scanSpecies(rows)
 }
 
-func (r *postgresPlantSpeciesRepository) FindByType(ctx context.Context, plantType string) ([]*entity.PlantSpecies, error) {
+func (r *PostgresPlantSpeciesRepository) FindByType(ctx context.Context, plantType string) ([]*entity.PlantSpecies, error) {
 	query := `
 		SELECT species_id, genus_id, species_name, plant_type, created_at
 		FROM plant_species
@@ -79,7 +80,7 @@ func (r *postgresPlantSpeciesRepository) FindByType(ctx context.Context, plantTy
 	return r.scanSpecies(rows)
 }
 
-func (r *postgresPlantSpeciesRepository) FindAll(ctx context.Context) ([]*entity.PlantSpecies, error) {
+func (r *PostgresPlantSpeciesRepository) FindAll(ctx context.Context) ([]*entity.PlantSpecies, error) {
 	query := `
 		SELECT species_id, genus_id, species_name, plant_type, created_at
 		FROM plant_species
@@ -95,7 +96,7 @@ func (r *postgresPlantSpeciesRepository) FindAll(ctx context.Context) ([]*entity
 	return r.scanSpecies(rows)
 }
 
-func (r *postgresPlantSpeciesRepository) Search(ctx context.Context, query string, limit int) ([]*entity.PlantSpecies, error) {
+func (r *PostgresPlantSpeciesRepository) Search(ctx context.Context, query string, limit int) ([]*entity.PlantSpecies, error) {
 	sqlQuery := `
 		SELECT species_id, genus_id, species_name, plant_type, created_at
 		FROM plant_species
@@ -113,7 +114,7 @@ func (r *postgresPlantSpeciesRepository) Search(ctx context.Context, query strin
 	return r.scanSpecies(rows)
 }
 
-func (r *postgresPlantSpeciesRepository) Create(ctx context.Context, species *entity.PlantSpecies) error {
+func (r *PostgresPlantSpeciesRepository) Create(ctx context.Context, species *entity.PlantSpecies) error {
 	if err := species.Validate(); err != nil {
 		return fmt.Errorf("validation failed: %w", err)
 	}
@@ -140,7 +141,7 @@ func (r *postgresPlantSpeciesRepository) Create(ctx context.Context, species *en
 	return nil
 }
 
-func (r *postgresPlantSpeciesRepository) Update(ctx context.Context, species *entity.PlantSpecies) error {
+func (r *PostgresPlantSpeciesRepository) Update(ctx context.Context, species *entity.PlantSpecies) error {
 	if err := species.Validate(); err != nil {
 		return fmt.Errorf("validation failed: %w", err)
 	}
@@ -174,7 +175,7 @@ func (r *postgresPlantSpeciesRepository) Update(ctx context.Context, species *en
 	return nil
 }
 
-func (r *postgresPlantSpeciesRepository) Delete(ctx context.Context, speciesID string) error {
+func (r *PostgresPlantSpeciesRepository) Delete(ctx context.Context, speciesID string) error {
 	query := `DELETE FROM plant_species WHERE species_id = $1`
 
 	result, err := r.db.ExecContext(ctx, query, speciesID)
@@ -195,7 +196,7 @@ func (r *postgresPlantSpeciesRepository) Delete(ctx context.Context, speciesID s
 }
 
 // Helper method to scan species
-func (r *postgresPlantSpeciesRepository) scanSpecies(rows *sql.Rows) ([]*entity.PlantSpecies, error) {
+func (r *PostgresPlantSpeciesRepository) scanSpecies(rows *sql.Rows) ([]*entity.PlantSpecies, error) {
 	var speciesList []*entity.PlantSpecies
 	for rows.Next() {
 		var species entity.PlantSpecies

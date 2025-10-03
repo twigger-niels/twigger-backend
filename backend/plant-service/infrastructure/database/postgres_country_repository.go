@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"time"
 
 	"twigger-backend/backend/plant-service/domain/entity"
 	"twigger-backend/backend/plant-service/domain/repository"
@@ -23,6 +24,11 @@ func NewPostgresCountryRepository(db *sql.DB) repository.CountryRepository {
 
 // FindByID retrieves a country by its UUID
 func (r *PostgresCountryRepository) FindByID(ctx context.Context, countryID string) (*entity.Country, error) {
+	start := time.Now()
+	defer func() {
+		LogQueryDuration("FindByID", "Country", time.Since(start), 1)
+	}()
+
 	query := `
 		SELECT
 			country_id,
@@ -245,7 +251,13 @@ func (r *PostgresCountryRepository) FindByClimateSystem(ctx context.Context, cli
 }
 
 // FindByPoint retrieves the country containing a specific geographic point
+// Requires GIST index: idx_countries_boundary USING GIST (country_boundary)
 func (r *PostgresCountryRepository) FindByPoint(ctx context.Context, latitude, longitude float64) (*entity.Country, error) {
+	// Validate coordinate bounds
+	if err := ValidateCoordinates(latitude, longitude); err != nil {
+		return nil, fmt.Errorf("invalid coordinates: %w", err)
+	}
+
 	query := `
 		SELECT
 			country_id,
@@ -314,6 +326,10 @@ func (r *PostgresCountryRepository) Create(ctx context.Context, country *entity.
 
 	var boundaryGeoJSON interface{}
 	if country.CountryBoundaryGeoJSON != nil {
+		// Validate GeoJSON before passing to database
+		if err := ValidateGeoJSON(*country.CountryBoundaryGeoJSON); err != nil {
+			return fmt.Errorf("invalid country boundary geojson: %w", err)
+		}
 		boundaryGeoJSON = *country.CountryBoundaryGeoJSON
 	}
 
@@ -354,6 +370,10 @@ func (r *PostgresCountryRepository) Update(ctx context.Context, country *entity.
 
 	var boundaryGeoJSON interface{}
 	if country.CountryBoundaryGeoJSON != nil {
+		// Validate GeoJSON before passing to database
+		if err := ValidateGeoJSON(*country.CountryBoundaryGeoJSON); err != nil {
+			return fmt.Errorf("invalid country boundary geojson: %w", err)
+		}
 		boundaryGeoJSON = *country.CountryBoundaryGeoJSON
 	}
 

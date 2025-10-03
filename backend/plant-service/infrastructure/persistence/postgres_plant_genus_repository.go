@@ -10,16 +10,17 @@ import (
 	"twigger-backend/backend/plant-service/domain/repository"
 )
 
-type postgresPlantGenusRepository struct {
+// PostgresPlantGenusRepository implements PlantGenusRepository using PostgreSQL
+type PostgresPlantGenusRepository struct {
 	db *sql.DB
 }
 
 // NewPostgresPlantGenusRepository creates a new PostgreSQL plant genus repository
 func NewPostgresPlantGenusRepository(db *sql.DB) repository.PlantGenusRepository {
-	return &postgresPlantGenusRepository{db: db}
+	return &PostgresPlantGenusRepository{db: db}
 }
 
-func (r *postgresPlantGenusRepository) FindByID(ctx context.Context, genusID string) (*entity.PlantGenus, error) {
+func (r *PostgresPlantGenusRepository) FindByID(ctx context.Context, genusID string) (*entity.PlantGenus, error) {
 	query := `
 		SELECT genus_id, family_id, genus_name, created_at
 		FROM plant_genera
@@ -44,7 +45,7 @@ func (r *postgresPlantGenusRepository) FindByID(ctx context.Context, genusID str
 	return &genus, nil
 }
 
-func (r *postgresPlantGenusRepository) FindByName(ctx context.Context, genusName string) (*entity.PlantGenus, error) {
+func (r *PostgresPlantGenusRepository) FindByName(ctx context.Context, genusName string) (*entity.PlantGenus, error) {
 	query := `
 		SELECT genus_id, family_id, genus_name, created_at
 		FROM plant_genera
@@ -69,7 +70,7 @@ func (r *postgresPlantGenusRepository) FindByName(ctx context.Context, genusName
 	return &genus, nil
 }
 
-func (r *postgresPlantGenusRepository) FindByFamily(ctx context.Context, familyID string) ([]*entity.PlantGenus, error) {
+func (r *PostgresPlantGenusRepository) FindByFamily(ctx context.Context, familyID string) ([]*entity.PlantGenus, error) {
 	query := `
 		SELECT genus_id, family_id, genus_name, created_at
 		FROM plant_genera
@@ -86,7 +87,7 @@ func (r *postgresPlantGenusRepository) FindByFamily(ctx context.Context, familyI
 	return r.scanGenera(rows)
 }
 
-func (r *postgresPlantGenusRepository) FindAll(ctx context.Context) ([]*entity.PlantGenus, error) {
+func (r *PostgresPlantGenusRepository) FindAll(ctx context.Context) ([]*entity.PlantGenus, error) {
 	query := `
 		SELECT genus_id, family_id, genus_name, created_at
 		FROM plant_genera
@@ -102,7 +103,7 @@ func (r *postgresPlantGenusRepository) FindAll(ctx context.Context) ([]*entity.P
 	return r.scanGenera(rows)
 }
 
-func (r *postgresPlantGenusRepository) Search(ctx context.Context, query string, limit int) ([]*entity.PlantGenus, error) {
+func (r *PostgresPlantGenusRepository) Search(ctx context.Context, query string, limit int) ([]*entity.PlantGenus, error) {
 	sqlQuery := `
 		SELECT genus_id, family_id, genus_name, created_at
 		FROM plant_genera
@@ -120,7 +121,7 @@ func (r *postgresPlantGenusRepository) Search(ctx context.Context, query string,
 	return r.scanGenera(rows)
 }
 
-func (r *postgresPlantGenusRepository) Create(ctx context.Context, genus *entity.PlantGenus) error {
+func (r *PostgresPlantGenusRepository) Create(ctx context.Context, genus *entity.PlantGenus) error {
 	if err := genus.Validate(); err != nil {
 		return fmt.Errorf("validation failed: %w", err)
 	}
@@ -146,7 +147,7 @@ func (r *postgresPlantGenusRepository) Create(ctx context.Context, genus *entity
 	return nil
 }
 
-func (r *postgresPlantGenusRepository) Update(ctx context.Context, genus *entity.PlantGenus) error {
+func (r *PostgresPlantGenusRepository) Update(ctx context.Context, genus *entity.PlantGenus) error {
 	if err := genus.Validate(); err != nil {
 		return fmt.Errorf("validation failed: %w", err)
 	}
@@ -179,7 +180,7 @@ func (r *postgresPlantGenusRepository) Update(ctx context.Context, genus *entity
 	return nil
 }
 
-func (r *postgresPlantGenusRepository) Delete(ctx context.Context, genusID string) error {
+func (r *PostgresPlantGenusRepository) Delete(ctx context.Context, genusID string) error {
 	query := `DELETE FROM plant_genera WHERE genus_id = $1`
 
 	result, err := r.db.ExecContext(ctx, query, genusID)
@@ -200,7 +201,7 @@ func (r *postgresPlantGenusRepository) Delete(ctx context.Context, genusID strin
 }
 
 // Helper method to scan genera
-func (r *postgresPlantGenusRepository) scanGenera(rows *sql.Rows) ([]*entity.PlantGenus, error) {
+func (r *PostgresPlantGenusRepository) scanGenera(rows *sql.Rows) ([]*entity.PlantGenus, error) {
 	var genera []*entity.PlantGenus
 	for rows.Next() {
 		var genus entity.PlantGenus

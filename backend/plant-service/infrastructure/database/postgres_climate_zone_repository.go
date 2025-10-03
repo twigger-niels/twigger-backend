@@ -70,8 +70,16 @@ func (r *PostgresClimateZoneRepository) FindByID(ctx context.Context, zoneID str
 	return &zone, nil
 }
 
-// FindByCountry retrieves all climate zones for a specific country
-func (r *PostgresClimateZoneRepository) FindByCountry(ctx context.Context, countryID string) ([]*entity.ClimateZone, error) {
+// FindByCountry retrieves climate zones for a specific country with pagination
+func (r *PostgresClimateZoneRepository) FindByCountry(ctx context.Context, countryID string, limit, offset int) ([]*entity.ClimateZone, error) {
+	// Apply default limit if not specified or invalid
+	if limit <= 0 || limit > 1000 {
+		limit = 100 // Default page size
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
 	query := `
 		SELECT
 			zone_id,
@@ -85,9 +93,10 @@ func (r *PostgresClimateZoneRepository) FindByCountry(ctx context.Context, count
 		FROM climate_zones
 		WHERE country_id = $1
 		ORDER BY zone_system, zone_code
+		LIMIT $2 OFFSET $3
 	`
 
-	return r.queryZones(ctx, query, countryID)
+	return r.queryZones(ctx, query, countryID, limit, offset)
 }
 
 // FindByCountryAndSystem retrieves zones for a country and climate system
@@ -162,7 +171,13 @@ func (r *PostgresClimateZoneRepository) FindByCode(ctx context.Context, countryI
 }
 
 // FindByPoint retrieves the climate zone containing a specific geographic point
+// Requires GIST index: idx_climate_zones_geometry USING GIST (zone_geometry)
 func (r *PostgresClimateZoneRepository) FindByPoint(ctx context.Context, latitude, longitude float64, zoneSystem string) (*entity.ClimateZone, error) {
+	// Validate coordinate bounds
+	if err := ValidateCoordinates(latitude, longitude); err != nil {
+		return nil, fmt.Errorf("invalid coordinates: %w", err)
+	}
+
 	query := `
 		SELECT
 			zone_id,
@@ -234,6 +249,10 @@ func (r *PostgresClimateZoneRepository) Create(ctx context.Context, zone *entity
 
 	var geometryJSON interface{}
 	if zone.ZoneGeometryJSON != nil {
+		// Validate GeoJSON before passing to database
+		if err := ValidateGeoJSON(*zone.ZoneGeometryJSON); err != nil {
+			return fmt.Errorf("invalid zone geometry geojson: %w", err)
+		}
 		geometryJSON = *zone.ZoneGeometryJSON
 	}
 
@@ -274,6 +293,10 @@ func (r *PostgresClimateZoneRepository) Update(ctx context.Context, zone *entity
 
 	var geometryJSON interface{}
 	if zone.ZoneGeometryJSON != nil {
+		// Validate GeoJSON before passing to database
+		if err := ValidateGeoJSON(*zone.ZoneGeometryJSON); err != nil {
+			return fmt.Errorf("invalid zone geometry geojson: %w", err)
+		}
 		geometryJSON = *zone.ZoneGeometryJSON
 	}
 

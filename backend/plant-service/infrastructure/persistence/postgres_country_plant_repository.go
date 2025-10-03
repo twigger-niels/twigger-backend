@@ -8,18 +8,20 @@ import (
 
 	"twigger-backend/backend/plant-service/domain/entity"
 	"twigger-backend/backend/plant-service/domain/repository"
+	"twigger-backend/backend/plant-service/infrastructure/database"
 )
 
-type postgresCountryPlantRepository struct {
+// PostgresCountryPlantRepository implements CountryPlantRepository using PostgreSQL
+type PostgresCountryPlantRepository struct {
 	db *sql.DB
 }
 
 // NewPostgresCountryPlantRepository creates a new PostgreSQL country-plant repository
 func NewPostgresCountryPlantRepository(db *sql.DB) repository.CountryPlantRepository {
-	return &postgresCountryPlantRepository{db: db}
+	return &PostgresCountryPlantRepository{db: db}
 }
 
-func (r *postgresCountryPlantRepository) FindByID(ctx context.Context, countryPlantID string) (*entity.CountryPlant, error) {
+func (r *PostgresCountryPlantRepository) FindByID(ctx context.Context, countryPlantID string) (*entity.CountryPlant, error) {
 	query := `
 		SELECT country_plant_id, country_id, plant_id, native_status, legal_status,
 		       ST_AsGeoJSON(native_range_geojson), created_at, updated_at
@@ -49,16 +51,26 @@ func (r *postgresCountryPlantRepository) FindByID(ctx context.Context, countryPl
 	return &cp, nil
 }
 
-func (r *postgresCountryPlantRepository) FindByCountry(ctx context.Context, countryID string) ([]*entity.CountryPlant, error) {
+// FindByCountry retrieves plant relationships for a country with pagination
+func (r *PostgresCountryPlantRepository) FindByCountry(ctx context.Context, countryID string, limit, offset int) ([]*entity.CountryPlant, error) {
+	// Apply default limit if not specified or invalid
+	if limit <= 0 || limit > 1000 {
+		limit = 100 // Default page size
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
 	query := `
 		SELECT country_plant_id, country_id, plant_id, native_status, legal_status,
 		       ST_AsGeoJSON(native_range_geojson), created_at, updated_at
 		FROM country_plants
 		WHERE country_id = $1
 		ORDER BY created_at DESC
+		LIMIT $2 OFFSET $3
 	`
 
-	rows, err := r.db.QueryContext(ctx, query, countryID)
+	rows, err := r.db.QueryContext(ctx, query, countryID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query country-plants by country: %w", err)
 	}
@@ -67,16 +79,26 @@ func (r *postgresCountryPlantRepository) FindByCountry(ctx context.Context, coun
 	return r.scanCountryPlants(rows)
 }
 
-func (r *postgresCountryPlantRepository) FindByPlant(ctx context.Context, plantID string) ([]*entity.CountryPlant, error) {
+// FindByPlant retrieves country relationships for a plant with pagination
+func (r *PostgresCountryPlantRepository) FindByPlant(ctx context.Context, plantID string, limit, offset int) ([]*entity.CountryPlant, error) {
+	// Apply default limit if not specified or invalid
+	if limit <= 0 || limit > 1000 {
+		limit = 100 // Default page size
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
 	query := `
 		SELECT country_plant_id, country_id, plant_id, native_status, legal_status,
 		       ST_AsGeoJSON(native_range_geojson), created_at, updated_at
 		FROM country_plants
 		WHERE plant_id = $1
 		ORDER BY created_at DESC
+		LIMIT $2 OFFSET $3
 	`
 
-	rows, err := r.db.QueryContext(ctx, query, plantID)
+	rows, err := r.db.QueryContext(ctx, query, plantID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query country-plants by plant: %w", err)
 	}
@@ -85,7 +107,7 @@ func (r *postgresCountryPlantRepository) FindByPlant(ctx context.Context, plantI
 	return r.scanCountryPlants(rows)
 }
 
-func (r *postgresCountryPlantRepository) FindByCountryAndPlant(ctx context.Context, countryID, plantID string) (*entity.CountryPlant, error) {
+func (r *PostgresCountryPlantRepository) FindByCountryAndPlant(ctx context.Context, countryID, plantID string) (*entity.CountryPlant, error) {
 	query := `
 		SELECT country_plant_id, country_id, plant_id, native_status, legal_status,
 		       ST_AsGeoJSON(native_range_geojson), created_at, updated_at
@@ -115,7 +137,7 @@ func (r *postgresCountryPlantRepository) FindByCountryAndPlant(ctx context.Conte
 	return &cp, nil
 }
 
-func (r *postgresCountryPlantRepository) FindByNativeStatus(ctx context.Context, countryID, nativeStatus string) ([]*entity.CountryPlant, error) {
+func (r *PostgresCountryPlantRepository) FindByNativeStatus(ctx context.Context, countryID, nativeStatus string) ([]*entity.CountryPlant, error) {
 	query := `
 		SELECT country_plant_id, country_id, plant_id, native_status, legal_status,
 		       ST_AsGeoJSON(native_range_geojson), created_at, updated_at
@@ -133,7 +155,7 @@ func (r *postgresCountryPlantRepository) FindByNativeStatus(ctx context.Context,
 	return r.scanCountryPlants(rows)
 }
 
-func (r *postgresCountryPlantRepository) FindByLegalStatus(ctx context.Context, countryID, legalStatus string) ([]*entity.CountryPlant, error) {
+func (r *PostgresCountryPlantRepository) FindByLegalStatus(ctx context.Context, countryID, legalStatus string) ([]*entity.CountryPlant, error) {
 	query := `
 		SELECT country_plant_id, country_id, plant_id, native_status, legal_status,
 		       ST_AsGeoJSON(native_range_geojson), created_at, updated_at
@@ -151,7 +173,7 @@ func (r *postgresCountryPlantRepository) FindByLegalStatus(ctx context.Context, 
 	return r.scanCountryPlants(rows)
 }
 
-func (r *postgresCountryPlantRepository) Create(ctx context.Context, countryPlant *entity.CountryPlant) error {
+func (r *PostgresCountryPlantRepository) Create(ctx context.Context, countryPlant *entity.CountryPlant) error {
 	if err := countryPlant.Validate(); err != nil {
 		return fmt.Errorf("validation failed: %w", err)
 	}
@@ -165,6 +187,13 @@ func (r *postgresCountryPlantRepository) Create(ctx context.Context, countryPlan
 	now := time.Now()
 	countryPlant.CreatedAt = now
 	countryPlant.UpdatedAt = now
+
+	// Validate GeoJSON if provided
+	if countryPlant.NativeRangeGeoJSON != nil {
+		if err := database.ValidateGeoJSON(*countryPlant.NativeRangeGeoJSON); err != nil {
+			return fmt.Errorf("invalid native range geojson: %w", err)
+		}
+	}
 
 	_, err := r.db.ExecContext(ctx, query,
 		countryPlant.CountryPlantID,
@@ -184,7 +213,7 @@ func (r *postgresCountryPlantRepository) Create(ctx context.Context, countryPlan
 	return nil
 }
 
-func (r *postgresCountryPlantRepository) Update(ctx context.Context, countryPlant *entity.CountryPlant) error {
+func (r *PostgresCountryPlantRepository) Update(ctx context.Context, countryPlant *entity.CountryPlant) error {
 	if err := countryPlant.Validate(); err != nil {
 		return fmt.Errorf("validation failed: %w", err)
 	}
@@ -197,6 +226,13 @@ func (r *postgresCountryPlantRepository) Update(ctx context.Context, countryPlan
 	`
 
 	countryPlant.UpdatedAt = time.Now()
+
+	// Validate GeoJSON if provided
+	if countryPlant.NativeRangeGeoJSON != nil {
+		if err := database.ValidateGeoJSON(*countryPlant.NativeRangeGeoJSON); err != nil {
+			return fmt.Errorf("invalid native range geojson: %w", err)
+		}
+	}
 
 	result, err := r.db.ExecContext(ctx, query,
 		countryPlant.CountryPlantID,
@@ -224,7 +260,7 @@ func (r *postgresCountryPlantRepository) Update(ctx context.Context, countryPlan
 	return nil
 }
 
-func (r *postgresCountryPlantRepository) Delete(ctx context.Context, countryPlantID string) error {
+func (r *PostgresCountryPlantRepository) Delete(ctx context.Context, countryPlantID string) error {
 	query := `DELETE FROM country_plants WHERE country_plant_id = $1`
 
 	result, err := r.db.ExecContext(ctx, query, countryPlantID)
@@ -245,7 +281,7 @@ func (r *postgresCountryPlantRepository) Delete(ctx context.Context, countryPlan
 }
 
 // Helper method to scan country-plants
-func (r *postgresCountryPlantRepository) scanCountryPlants(rows *sql.Rows) ([]*entity.CountryPlant, error) {
+func (r *PostgresCountryPlantRepository) scanCountryPlants(rows *sql.Rows) ([]*entity.CountryPlant, error) {
 	var countryPlants []*entity.CountryPlant
 	for rows.Next() {
 		var cp entity.CountryPlant

@@ -14,7 +14,19 @@
       "Bash(sed:*)",
       "mcp__ide__getDiagnostics",
       "Bash(go build:*)",
-      "Bash(DATABASE_URL=\"postgres://postgres:%2FR%7CP8JqlSJ%5Br%25cl%7D@162.222.181.26:5432/postgres?sslmode=require\" psql -f \"C:\\Repositories\\twigger-backend\\twigger-backend\\migrations\\005_add_localization.sql\")"
+      "Bash(DATABASE_URL=\"postgres://postgres:%2FR%7CP8JqlSJ%5Br%25cl%7D@162.222.181.26:5432/postgres?sslmode=require\" psql -f \"C:\\Repositories\\twigger-backend\\twigger-backend\\migrations\\005_add_localization.sql\")",
+      "Bash(chmod:*)",
+      "Bash(docker-compose:*)",
+      "Bash(docker:*)",
+      "Bash(psql:*)",
+      "Bash(findstr:*)",
+      "Bash(echo:*)",
+      "Bash(DATABASE_URL=\"postgres://postgres:%2FR%7CP8JqlSJ%5Br%25cl%7D@162.222.181.26:5432/postgres?sslmode=require\" psql -c \"\\dt\")",
+      "Bash(USE_CLOUD_DB=true go test -tags=integration -run TestPostgresPlantRepository_FindByID_Integration -v -timeout 30s)",
+      "Bash(Select-String -Pattern \"(PASS|FAIL|SKIP).*Test\")",
+      "Bash(Select-Object -Last 20)",
+      "Bash(Select-String -Pattern \"(PASS|FAIL|RUN)\")",
+      "Bash(mkdir:*)"
     ],
     "deny": [],
     "ask": []
