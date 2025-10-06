@@ -30,7 +30,9 @@ func (s *PlantService) GetPlant(ctx context.Context, plantID string, includeDeta
 	}
 
 	// TODO: Update API layer to pass language context from user preferences
-	plant, err := s.repo.FindByID(ctx, plantID, "en", nil)
+	// TODO: Extract language from context (Part 6)
+	// HACK: Using actual UUID from seeded data instead of ISO code
+	plant, err := s.repo.FindByID(ctx, plantID, "8a86d436-e58f-4e2c-aac1-2e3c5a7b10cf", nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get plant: %w", err)
 	}
@@ -38,7 +40,7 @@ func (s *PlantService) GetPlant(ctx context.Context, plantID string, includeDeta
 	if includeDetails {
 		// Load physical characteristics
 		// TODO: Extract language from context (for now defaulting to English)
-		if pc, err := s.repo.GetPhysicalCharacteristics(ctx, plantID, "en"); err == nil && pc != nil {
+		if pc, err := s.repo.GetPhysicalCharacteristics(ctx, plantID, "8a86d436-e58f-4e2c-aac1-2e3c5a7b10cf"); err == nil && pc != nil {
 			plant.PhysicalCharacteristics = pc
 		}
 		// Note: Growing conditions require country_id, so we don't load them here
@@ -56,7 +58,7 @@ func (s *PlantService) GetPlantWithConditions(ctx context.Context, plantID, coun
 
 	if countryID != "" {
 		// TODO: Extract language from context (for now defaulting to English)
-		gc, err := s.repo.GetGrowingConditions(ctx, plantID, countryID, "en")
+		gc, err := s.repo.GetGrowingConditions(ctx, plantID, countryID, "8a86d436-e58f-4e2c-aac1-2e3c5a7b10cf")
 		if err == nil && gc != nil {
 			plant.GrowingConditions = gc
 		}
@@ -84,7 +86,7 @@ func (s *PlantService) SearchPlants(ctx context.Context, query string, filter *r
 	}
 
 	// Perform search - TODO: Pass language context from API layer
-	result, err := s.repo.Search(ctx, query, filter, "en", nil)
+	result, err := s.repo.Search(ctx, query, filter, "8a86d436-e58f-4e2c-aac1-2e3c5a7b10cf", nil)
 	if err != nil {
 		return nil, fmt.Errorf("search failed: %w", err)
 	}
@@ -105,7 +107,7 @@ func (s *PlantService) FindByBotanicalName(ctx context.Context, botanicalName st
 	}
 
 	// TODO: Pass language context from API layer
-	return s.repo.FindByBotanicalName(ctx, botanicalName, "en", nil)
+	return s.repo.FindByBotanicalName(ctx, botanicalName, "8a86d436-e58f-4e2c-aac1-2e3c5a7b10cf", nil)
 }
 
 // FindPlantsByFamily retrieves all plants in a family
@@ -240,13 +242,80 @@ func (s *PlantService) CreatePlant(ctx context.Context, plant *entity.Plant) err
 	}
 
 	// Check if plant with same botanical name already exists
-	existing, err := s.repo.FindByBotanicalName(ctx, plant.FullBotanicalName, "en", nil)
+	// TODO: Extract language from context (Part 6)
+	existing, err := s.repo.FindByBotanicalName(ctx, plant.FullBotanicalName, "8a86d436-e58f-4e2c-aac1-2e3c5a7b10cf", nil)
 	if err == nil && existing != nil {
 		return entity.ErrPlantAlreadyExists
 	}
 
 	// Create plant
 	return s.repo.Create(ctx, plant)
+}
+
+// UpdatePlant updates an existing plant with validation
+func (s *PlantService) UpdatePlant(ctx context.Context, plantID string, updates *entity.Plant) error {
+	if plantID == "" {
+		return entity.ErrInvalidPlantID
+	}
+
+	// Verify plant exists
+	// TODO: Extract language from context (Part 6)
+	existing, err := s.repo.FindByID(ctx, plantID, "8a86d436-e58f-4e2c-aac1-2e3c5a7b10cf", nil)
+	if err != nil {
+		return fmt.Errorf("failed to find plant: %w", err)
+	}
+	if existing == nil {
+		return entity.ErrPlantNotFound
+	}
+
+	// Prevent changing immutable fields
+	if updates.PlantID != "" && updates.PlantID != plantID {
+		return fmt.Errorf("cannot change plant ID")
+	}
+	if updates.SpeciesID != "" && updates.SpeciesID != existing.SpeciesID {
+		return fmt.Errorf("cannot change species ID")
+	}
+
+	// Set the ID to ensure we're updating the right plant
+	updates.PlantID = plantID
+	updates.SpeciesID = existing.SpeciesID
+
+	// Validate updates
+	if err := updates.Validate(); err != nil {
+		return fmt.Errorf("validation failed: %w", err)
+	}
+
+	// Check if new botanical name conflicts with another plant
+	if updates.FullBotanicalName != existing.FullBotanicalName {
+		// TODO: Extract language from context (Part 6)
+		conflict, err := s.repo.FindByBotanicalName(ctx, updates.FullBotanicalName, "8a86d436-e58f-4e2c-aac1-2e3c5a7b10cf", nil)
+		if err == nil && conflict != nil && conflict.PlantID != plantID {
+			return entity.ErrPlantAlreadyExists
+		}
+	}
+
+	// Update plant
+	return s.repo.Update(ctx, updates)
+}
+
+// DeletePlant removes a plant from the database
+func (s *PlantService) DeletePlant(ctx context.Context, plantID string) error {
+	if plantID == "" {
+		return entity.ErrInvalidPlantID
+	}
+
+	// Verify plant exists before deleting
+	// TODO: Extract language from context (Part 6)
+	existing, err := s.repo.FindByID(ctx, plantID, "8a86d436-e58f-4e2c-aac1-2e3c5a7b10cf", nil)
+	if err != nil {
+		return fmt.Errorf("failed to find plant: %w", err)
+	}
+	if existing == nil {
+		return entity.ErrPlantNotFound
+	}
+
+	// Delete plant
+	return s.repo.Delete(ctx, plantID)
 }
 
 // rankSearchResults applies additional ranking logic to search results

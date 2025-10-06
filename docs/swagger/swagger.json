@@ -1,0 +1,26 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "The Twigger Plant Database API provides comprehensive plant data, garden management, and spatial analysis.",
+        "title": "Twigger Plant Database API",
+        "contact": {
+            "name": "Twigger Team",
+            "email": "support@twigger.com"
+        },
+        "license": {
+            "name": "MIT"
+        },
+        "version": "1.0.0"
+    },
+    "host": "localhost:8080",
+    "basePath": "/api/v1",
+    "paths": {},
+    "securityDefinitions": {
+        "Bearer": {
+            "description": "Firebase JWT token. Format: 'Bearer {token}'",
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
+        }
+    }
+}

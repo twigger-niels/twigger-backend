@@ -15,12 +15,9 @@ ON plant_families USING GIN (common_name gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS idx_plant_genera_genus_name_trgm
 ON plant_genera USING GIN (genus_name gin_trgm_ops);
 
--- Plant species: species_name and full_botanical_name searches
+-- Plant species: species_name searches
 CREATE INDEX IF NOT EXISTS idx_plant_species_species_name_trgm
 ON plant_species USING GIN (species_name gin_trgm_ops);
-
-CREATE INDEX IF NOT EXISTS idx_plant_species_botanical_name_trgm
-ON plant_species USING GIN (full_botanical_name gin_trgm_ops);
 
 -- Cultivars: cultivar_name and trade_name searches
 CREATE INDEX IF NOT EXISTS idx_cultivars_cultivar_name_trgm

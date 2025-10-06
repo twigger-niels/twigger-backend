@@ -1,0 +1,20 @@
+basePath: /api/v1
+host: localhost:8080
+info:
+  contact:
+    email: support@twigger.com
+    name: Twigger Team
+  description: The Twigger Plant Database API provides comprehensive plant data, garden
+    management, and spatial analysis.
+  license:
+    name: MIT
+  title: Twigger Plant Database API
+  version: 1.0.0
+paths: {}
+securityDefinitions:
+  Bearer:
+    description: 'Firebase JWT token. Format: ''Bearer {token}'''
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

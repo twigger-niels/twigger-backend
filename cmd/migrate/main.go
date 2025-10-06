@@ -57,9 +57,25 @@ func main() {
 		}
 		fmt.Println("Rollback completed successfully!")
 
+	case "force":
+		if len(os.Args) < 3 {
+			fmt.Println("Usage: go run cmd/migrate/main.go force [version]")
+			os.Exit(1)
+		}
+
+		version, err := strconv.Atoi(os.Args[2])
+		if err != nil {
+			log.Fatalf("Invalid version number: %v", err)
+		}
+		fmt.Printf("Forcing migration version to %d...\n", version)
+		if err := db.ForceMigrationVersion(dbURL, version); err != nil {
+			log.Fatalf("Force version failed: %v", err)
+		}
+		fmt.Println("Migration version forced successfully!")
+
 	default:
 		fmt.Printf("Unknown command: %s\n", command)
-		fmt.Println("Usage: go run cmd/migrate/main.go [up|down] [steps]")
+		fmt.Println("Usage: go run cmd/migrate/main.go [up|down|force] [steps|version]")
 		os.Exit(1)
 	}
 }

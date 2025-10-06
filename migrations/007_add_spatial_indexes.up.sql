@@ -43,26 +43,19 @@ BEGIN
     END IF;
 END $$;
 
--- Composite indexes for common query patterns
--- These combine spatial and non-spatial columns for specific use cases
+-- Non-spatial indexes for common query patterns
 
--- Gardens by user with spatial filtering
-CREATE INDEX IF NOT EXISTS idx_gardens_user_boundary
-ON gardens USING GIST(user_id, boundary);
+-- Gardens by user (for filtering by user before spatial operations)
+CREATE INDEX IF NOT EXISTS idx_gardens_user_id
+ON gardens(user_id);
 
-COMMENT ON INDEX idx_gardens_user_boundary IS 'Composite index for user-specific spatial queries';
+-- Zones by garden (for filtering zones by garden)
+CREATE INDEX IF NOT EXISTS idx_garden_zones_garden_id
+ON garden_zones(garden_id);
 
--- Zones by garden with spatial filtering
-CREATE INDEX IF NOT EXISTS idx_garden_zones_garden_geometry
-ON garden_zones(garden_id, geometry);
-
-COMMENT ON INDEX idx_garden_zones_garden_geometry IS 'Composite index for garden-specific zone queries';
-
--- Plants by garden with spatial filtering
-CREATE INDEX IF NOT EXISTS idx_garden_plants_garden_location
-ON garden_plants(garden_id, location);
-
-COMMENT ON INDEX idx_garden_plants_garden_location IS 'Composite index for garden-specific plant location queries';
+-- Plants by garden (for filtering plants by garden)
+CREATE INDEX IF NOT EXISTS idx_garden_plants_garden_id
+ON garden_plants(garden_id);
 
 -- Active plants only (for FindActivePlants query optimization)
 CREATE INDEX IF NOT EXISTS idx_garden_plants_active

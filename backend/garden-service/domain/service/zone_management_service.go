@@ -198,7 +198,7 @@ func (s *zoneManagementService) CalculateZoneArea(ctx context.Context, zoneID st
 		return 0, entity.NewInvalidInputError("zone_id", "zone ID cannot be empty")
 	}
 
-	area, err := s.zoneRepo.CalculateArea(ctx, zoneID)
+	area, err := s.zoneRepo.CalculateZoneArea(ctx, zoneID)
 	if err != nil {
 		return 0, fmt.Errorf("failed to calculate area: %w", err)
 	}

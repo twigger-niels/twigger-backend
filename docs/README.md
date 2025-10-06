@@ -1,142 +1,291 @@
-# Twigger Backend Documentation
+# Twigger Backend - System Documentation
 
 Welcome to the comprehensive documentation for the Twigger Plant Database Backend System.
 
-## 📚 Documentation Overview
+## 📚 About This Directory
 
-This documentation covers the complete backend system for a production-ready plant database with advanced spatial capabilities, multi-country support, and comprehensive garden management features.
+This directory contains **system-wide** documentation that affects multiple services or describes the overall architecture. For service-specific documentation, see the respective service's `docs/` folder (e.g., `backend/plant-service/docs/`).
 
-## 🗂️ Documentation Structure
+For guidance on where documentation should live, see [`PROJECT_STRUCTURE.md`](../PROJECT_STRUCTURE.md) in the repository root.
 
-### 🏗️ [Architecture](./architecture/)
-System design and architectural decisions
-- **[System Overview](./architecture/system-overview.md)** - High-level architecture, components, and deployment strategy
+## 🏗️ System Overview
 
-### 🗄️ [Database](./database/)
-Comprehensive database documentation
-- **[Schema Overview](./database/schema-overview.md)** - Complete schema description and design rationale
-- **[ER Diagram](./database/er-diagram.md)** - Entity-relationship diagrams with detailed relationships
-- **[Spatial Queries](./database/spatial-queries.md)** - PostGIS usage, spatial operations, and query examples
+Twigger is a garden planning and plant database platform built with a microservices architecture. The backend consists of multiple specialized services that work together to provide plant data, garden management, and spatial features.
 
-### 🚀 [Deployment](./deployment/)
-Infrastructure and deployment guides
-- **[Cloud SQL Setup](./deployment/cloud-sql-setup.md)** - Complete Cloud SQL PostgreSQL setup with PostGIS
+### Services
 
-### 🔌 [API](./api/)
-API documentation and examples
-- *Coming in Part 2: REST and GraphQL API documentation*
+#### 🌱 Plant Service
+**Purpose**: Comprehensive plant database with localized common names, growing conditions, and companion planting recommendations.
 
-## 🎯 Quick Navigation
+**Key Features**:
+- Plant taxonomy (families, genera, species, cultivars)
+- Multi-language common names and descriptions
+- Growing conditions (sun, soil, water, hardiness zones)
+- Physical characteristics (height, spread, growth rate)
+- Companion planting relationships
 
-### For Developers
-- [Database Schema Overview](./database/schema-overview.md) - Understanding the data model
-- [Spatial Queries Guide](./database/spatial-queries.md) - Working with PostGIS
-- [System Architecture](./architecture/system-overview.md) - Understanding the system design
+**Documentation**: `backend/plant-service/docs/`
 
-### For DevOps/Infrastructure
-- [Cloud SQL Setup Guide](./deployment/cloud-sql-setup.md) - Complete infrastructure setup
-- [System Architecture](./architecture/system-overview.md) - Deployment and scaling strategies
+#### 🏡 Garden Service
+**Purpose**: Spatial garden management using PostGIS for location-based features.
 
-### For Database Administrators
-- [ER Diagram](./database/er-diagram.md) - Complete database relationships
-- [Schema Overview](./database/schema-overview.md) - Table structures and constraints
-- [Cloud SQL Setup](./deployment/cloud-sql-setup.md) - Database configuration and maintenance
+**Key Features**:
+- Garden boundary creation and management
+- Zone management (planting areas within gardens)
+- Plant placement with spatial validation
+- Workspace isolation for multi-tenant support
+
+**Documentation**: `backend/garden-service/docs/`
+
+#### 🚪 API Gateway
+**Purpose**: Single entry point for all client applications.
+
+**Key Features**:
+- Request routing to appropriate services
+- Authentication and authorization
+- Rate limiting and security
+- Response aggregation
+
+**Documentation**: `docs/swagger/` (generated)
+
+## 🛠️ Technology Stack
+
+- **Language**: Go 1.22+
+- **Database**: PostgreSQL 17 with PostGIS 3.5
+- **Authentication**: Firebase Auth
+- **API**: GraphQL + REST
+- **Cache**: Redis (planned)
+- **Deployment**: Google Cloud Run (planned)
+
+## 📊 Database Architecture
+
+**Single Database, Multiple Schemas**:
+- All services share one PostgreSQL instance
+- Logical separation through schema design
+- Cross-service queries handled at application layer
+
+**Key Features**:
+- PostGIS for spatial data (gardens, zones, plant placements)
+- GIN trigram indexes for full-text search (ILIKE queries)
+- Multi-language support with 4-tier fallback chains
+- GIST indexes for spatial queries
+- Prepared statement pooling for performance
+
+### Database Migrations
+
+**Location**: `migrations/`
+
+**Key Migrations**:
+- `000_initial_schema.sql` - Base plant taxonomy
+- `005_add_localization.sql` - Multi-language support (8 localization tables)
+- `006_add_gin_trigram_indexes.sql` - Full-text search performance
+- `007_add_spatial_indexes.sql` - Spatial query performance
+
+**Running Migrations**:
+```bash
+# Run all pending migrations
+go run cmd/migrate/main.go up
+
+# Rollback last migration
+go run cmd/migrate/main.go down
+```
+
+## 🔌 API Documentation
+
+### Swagger/OpenAPI
+- **Location**: `docs/swagger/`
+- **Generated by**: swag
+- **Access**: `/swagger/index.html` (when API gateway is running)
+
+### GraphQL Schema
+- **Location**: TBD
+- **Playground**: TBD
+
+## 🧪 Testing
+
+### Integration Tests
+```bash
+# Start test database (PostgreSQL 17 + PostGIS 3.5)
+docker-compose -f docker-compose.test.yml up -d
+
+# Run integration tests
+go test ./... -tags=integration
+
+# Cleanup
+docker-compose -f docker-compose.test.yml down -v
+```
+
+### Performance Tests
+```bash
+# Run benchmarks
+go test -bench=. ./backend/plant-service/...
+```
+
+## 🚀 Development
+
+### Local Development Setup
+```bash
+# Start PostgreSQL with PostGIS
+docker-compose up -d postgres
+
+# Run migrations
+go run cmd/migrate/main.go up
+
+# Start API gateway
+go run cmd/api-gateway/main.go
+```
+
+### Development Patterns
+
+For detailed development patterns, see [`CLAUDE.md`](../CLAUDE.md) in the repository root, which includes:
+- 45+ critical gotchas across 6 categories
+- Code style guidelines (Go, SQL, testing)
+- Localization patterns with fallback chains
+- PostGIS spatial validation patterns
+- Transaction management with savepoints
+- Performance optimization strategies
+
+## 🔒 Security
+
+### Authentication
+- Firebase Authentication tokens
+- Token validation at API gateway
+- User context propagation to services
+
+### Authorization
+- Workspace-based isolation
+- Row-level security (planned)
+- Garden ownership validation
+
+### Data Validation
+- Input validation at API layer
+- GeoJSON structure and coordinate bounds validation
+- SQL injection prevention (parameterized queries only)
+
+## ⚡ Performance Considerations
+
+### Database Optimization
+- **Spatial Indexes**: GIST on all geometry/geography columns (100x improvement)
+- **Text Search**: GIN trigram indexes for ILIKE queries (100x improvement)
+- **Prepared Statements**: Cached for frequently-used queries
+- **Connection Pooling**: Max 25 connections, 5 idle, 5min lifetime
+
+### Caching Strategy (Planned)
+- Redis for lookup tables (families, genera, countries)
+- Language-aware cache keys: `family:{id}:lang:{langID}:country:{countryID}`
+- Pattern-based invalidation: `family:{id}:*`
+
+### Localization Performance
+- Batch loading to prevent N+1 queries
+- Composite indexes: `(plant_id, language_id, country_id)`
+- SQL-based 4-tier fallback chains (country+lang → lang → English → key)
+
+## 📈 Project Status
+
+### ✅ Completed
+- **Part 1**: Core plant taxonomy
+- **Part 2**: Multi-language localization (8 tables, fallback chains)
+- **Part 3**: Growing conditions, physical characteristics, filtering
+
+### 🔄 In Progress
+- **Part 4**: API layer (GraphQL/REST endpoints)
+
+### ⏳ Planned
+- **Part 5**: Companion planting recommendations
+- **Phase 2**: Garden management (boundaries, zones, placements)
+- **Phase 3**: Production deployment (Cloud Run, monitoring, caching)
+
+## 📖 Documentation Index
+
+### System-Wide (This Directory)
+- `README.md` - This file (system overview)
+- `swagger/` - Generated API documentation
+- `ARCHITECTURE.md` - Detailed system architecture (TODO)
+- `DEPLOYMENT.md` - Deployment guide (TODO)
+
+### Repository Root
+- `PROJECT_STRUCTURE.md` - How this repository is organized
+- `CLAUDE.md` - Development patterns and 45+ critical gotchas
+
+### Service-Specific
+- `backend/plant-service/docs/` - Plant service (architecture, PRD, tasks)
+- `backend/garden-service/docs/` - Garden service documentation
+- `backend/shared/docs/` - Shared utility documentation
 
 ## 🌟 System Highlights
 
-### 📊 Database Features
-- **21 tables** with comprehensive plant data structure
+### Database Features
+- **35+ tables** with comprehensive plant and garden data
 - **13 measurement domains** for data standardization
-- **7 enum types** for controlled vocabularies
+- **7+ enum types** for controlled vocabularies
 - **Full PostGIS spatial support** with analysis functions
 - **Production-ready** with proper indexing and constraints
 
-### 🗺️ Spatial Capabilities
-- Country and climate zone boundaries
-- Garden mapping with zones and features
+### Spatial Capabilities
+- Country and climate zone boundaries (geography type)
+- Garden mapping with zones and features (geometry + geography)
 - Plant placement tracking with spatial validation
-- Shade analysis and optimal planting algorithms
+- Containment checks (ST_Contains) and distance calculations (ST_Distance)
 - Multi-country climate zone support
 
-### 🔬 Data Quality
+### Data Quality
 - Multi-source data with confidence scoring
 - Source reliability tracking
-- Scientific botanical naming standards
+- Scientific botanical naming standards (ICBN)
 - Comprehensive plant taxonomy hierarchy
 
-### 🏢 Enterprise Features
+### Enterprise Features
 - Multi-tenant workspace architecture
-- Role-based access control
+- Role-based access control (planned)
 - Audit trails and data lineage
-- Scalable cloud infrastructure
+- Scalable cloud infrastructure (planned)
 
-## 🚀 Getting Started
+## 🔗 External Resources
 
-1. **Infrastructure Setup**: Start with [Cloud SQL Setup](./deployment/cloud-sql-setup.md)
-2. **Understanding the Data**: Review [Schema Overview](./database/schema-overview.md)
-3. **Spatial Operations**: Learn [Spatial Queries](./database/spatial-queries.md)
-4. **System Design**: Study [System Architecture](./architecture/system-overview.md)
-
-## 📈 Current Status
-
-### ✅ Part 1: Database & Core Infrastructure - COMPLETED
-
-**All setup tasks completed:**
-- ✅ Cloud SQL PostgreSQL 17 instance: `dev-twigger-db1` (162.222.181.26)
-- ✅ PostGIS 3.5 extensions enabled and tested
-- ✅ Authorized networks configured (82.217.141.244/32)
-- ✅ Complete database schema with migrations
-- ✅ Connection pooling with pgxpool
-- ✅ Health check endpoint working
-- ✅ Automated backups: 14-day retention, 7-day PITR
-- ✅ Backup verification scripts and procedures
-- ✅ Comprehensive documentation
-
-**Infrastructure ready for development!**
-
-### 🔄 Next: Part 2 - Plant Domain Service
-Ready to begin implementation of plant entities, repositories, and business logic.
-
-## 🔗 Related Resources
-
-### External Documentation
+### Documentation
 - [PostGIS Documentation](https://postgis.net/documentation/)
-- [PostgreSQL Documentation](https://www.postgresql.org/docs/)
-- [Google Cloud SQL Documentation](https://cloud.google.com/sql/docs)
-- [Go Documentation](https://golang.org/doc/)
+- [PostgreSQL 17 Documentation](https://www.postgresql.org/docs/17/)
+- [Google Cloud SQL](https://cloud.google.com/sql/docs)
+- [Go 1.22+ Documentation](https://golang.org/doc/)
 
-### Standards and References
+### Standards
 - [Botanical Nomenclature (ICBN)](https://www.iapt-taxon.org/nomen/main.php)
-- [GeoJSON Specification](https://tools.ietf.org/html/rfc7946)
+- [GeoJSON Specification (RFC 7946)](https://tools.ietf.org/html/rfc7946)
 - [ISO 3166 Country Codes](https://www.iso.org/iso-3166-country-codes.html)
 - [USDA Hardiness Zones](https://planthardiness.ars.usda.gov/)
 
-## 📝 Documentation Guidelines
+## 🤝 Contributing
 
-### Contributing to Documentation
-- Use clear, concise language
-- Include practical examples
-- Maintain up-to-date code samples
-- Follow markdown formatting standards
-- Include diagrams where helpful
+### Development Workflow
+1. Create feature branch from `main`
+2. Write tests (unit + integration)
+3. Implement feature following patterns in `CLAUDE.md`
+4. Update documentation (service docs and/or system docs)
+5. Run full test suite
+6. Create pull request
 
-### Documentation Standards
-- **Mermaid diagrams** for system and database diagrams
-- **Code blocks** with syntax highlighting
-- **Table format** for structured data
-- **Section numbering** for long documents
-- **Cross-references** between related documents
+### Commit Message Format
+```
+type(scope): subject
 
-## 🤝 Support and Feedback
+Examples:
+- feat(plant-service): Add cultivar search endpoint
+- fix(garden-service): Validate polygon closure before insert
+- docs(system): Update deployment guide
+- perf(plant-service): Add GIN index for common name search
+- refactor(shared): Extract GeoJSON validator
+- test(plant-service): Add integration tests for filters
+```
 
-For questions about this documentation or the system:
-1. Check the relevant documentation section
-2. Review the architectural overview
-3. Consult the spatial queries guide for PostGIS questions
-4. Reference the Cloud SQL setup guide for infrastructure issues
+## 📞 Questions or Issues?
+
+- **Development patterns**: Check root `CLAUDE.md` (45+ documented gotchas)
+- **Service-specific questions**: Check `backend/{service}/docs/`
+- **Repository organization**: See `PROJECT_STRUCTURE.md`
+- **System architecture**: Review this file and service documentation
 
 ---
 
-**Last Updated**: 2025-09-30
-**Documentation Version**: 1.0
-**System Version**: Part 1 Complete
+**Last Updated**: 2025-10-06
+**Documentation Version**: 2.0 (Reorganized structure)
+**System Status**: Part 3 Complete, Part 4 In Progress

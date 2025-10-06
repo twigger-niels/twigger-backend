@@ -113,7 +113,7 @@ func (s *plantPlacementService) PlacePlant(ctx context.Context, gardenPlant *ent
 
 	// Set timestamps
 	now := time.Now()
-	gardenPlant.PlantedAt = now
+	gardenPlant.PlantedDate = &now
 	gardenPlant.CreatedAt = now
 	gardenPlant.UpdatedAt = now
 
@@ -168,12 +168,16 @@ func (s *plantPlacementService) ListGardenPlants(ctx context.Context, gardenID s
 		}
 
 		if filter.ActiveOnly {
-			return s.gardenPlantRepo.FindActivePlants(ctx, gardenID)
+			return s.gardenPlantRepo.FindActiveInGarden(ctx, gardenID)
 		}
 	}
 
-	// No filters - return all plants
-	plants, err := s.gardenPlantRepo.FindByGardenID(ctx, gardenID)
+	// No filters - return all plants (includeRemoved = true by default)
+	includeRemoved := true
+	if filter != nil && filter.ActiveOnly {
+		includeRemoved = false
+	}
+	plants, err := s.gardenPlantRepo.FindByGardenID(ctx, gardenID, includeRemoved)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list garden plants: %w", err)
 	}
@@ -212,9 +216,9 @@ func (s *plantPlacementService) UpdatePlantPlacement(ctx context.Context, garden
 		}
 	}
 
-	// Preserve created_at and planted_at
+	// Preserve created_at and planted_date
 	gardenPlant.CreatedAt = existing.CreatedAt
-	gardenPlant.PlantedAt = existing.PlantedAt
+	gardenPlant.PlantedDate = existing.PlantedDate
 	gardenPlant.UpdatedAt = time.Now()
 
 	if err := s.gardenPlantRepo.Update(ctx, gardenPlant); err != nil {
@@ -331,7 +335,7 @@ func (s *plantPlacementService) BulkPlacePlants(ctx context.Context, gardenPlant
 
 		// Set timestamps
 		now := time.Now()
-		gp.PlantedAt = now
+		gp.PlantedDate = &now
 		gp.CreatedAt = now
 		gp.UpdatedAt = now
 
@@ -388,14 +392,14 @@ func (s *plantPlacementService) GetPlantingStats(ctx context.Context, gardenID s
 		return nil, fmt.Errorf("garden not found: %w", err)
 	}
 
-	// Get total count
-	totalCount, err := s.gardenPlantRepo.CountByGardenID(ctx, gardenID)
+	// Get total count (including removed plants)
+	totalCount, err := s.gardenPlantRepo.CountByGardenID(ctx, gardenID, true)
 	if err != nil {
 		return nil, fmt.Errorf("failed to count plants: %w", err)
 	}
 
 	// Get active plants
-	activePlants, err := s.gardenPlantRepo.FindActivePlants(ctx, gardenID)
+	activePlants, err := s.gardenPlantRepo.FindActiveInGarden(ctx, gardenID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find active plants: %w", err)
 	}
