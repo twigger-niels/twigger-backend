@@ -82,8 +82,10 @@ func VerifyIDToken(ctx context.Context, idToken string) (*auth.Token, error) {
 		return nil, fmt.Errorf("failed to verify token: %w", err)
 	}
 
-	// Debug log the token
-	fmt.Printf("DEBUG Firebase Token - UID: %s, Claims: %+v\n", token.UID, token.Claims)
+	// Only log in development/debug mode, without exposing sensitive claims
+	if os.Getenv("ENVIRONMENT") == "development" || os.Getenv("LOG_LEVEL") == "debug" {
+		fmt.Printf("DEBUG: Token verified successfully\n")
+	}
 
 	return token, nil
 }

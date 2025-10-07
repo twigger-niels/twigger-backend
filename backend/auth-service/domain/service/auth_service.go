@@ -136,21 +136,50 @@ func (s *AuthService) createNewUser(
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback()
 
-	// Create user
+	// Add panic recovery to ensure transaction rollback
+	defer func() {
+		if p := recover(); p != nil {
+			tx.Rollback()
+			panic(p) // re-panic after rollback
+		}
+	}()
+	defer tx.Rollback() // Rollback if not committed
+
+	// Create user entity
 	user := &entity.User{
 		UserID:        uuid.New(),
 		FirebaseUID:   &firebaseUID,
 		Email:         email,
-		Username:      generateUsername(email),
+		Username:      generateUsernameWithRetry(ctx, tx, email),
 		EmailVerified: emailVerified,
 		PhotoURL:      photoURL,
 		Provider:      provider,
 		CreatedAt:     time.Now(),
 	}
 
-	if err := s.userRepo.Create(ctx, user); err != nil {
+	// Insert user directly using transaction
+	userQuery := `
+		INSERT INTO users (
+			user_id, firebase_uid, email, username, email_verified,
+			phone_number, photo_url, provider, created_at, last_login_at
+		) VALUES (
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+		)
+	`
+	_, err = tx.ExecContext(ctx, userQuery,
+		user.UserID,
+		user.FirebaseUID,
+		user.Email,
+		user.Username,
+		user.EmailVerified,
+		nil, // phone_number
+		user.PhotoURL,
+		user.Provider,
+		user.CreatedAt,
+		nil, // last_login_at
+	)
+	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create user: %w", err)
 	}
 
@@ -163,13 +192,36 @@ func (s *AuthService) createNewUser(
 		UpdatedAt:   time.Now(),
 	}
 
-	if err := s.workspaceRepo.Create(ctx, workspace); err != nil {
+	workspaceQuery := `
+		INSERT INTO workspaces (workspace_id, owner_id, name, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5)
+	`
+	_, err = tx.ExecContext(ctx, workspaceQuery,
+		workspace.WorkspaceID,
+		workspace.OwnerID,
+		workspace.Name,
+		workspace.CreatedAt,
+		workspace.UpdatedAt,
+	)
+	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create workspace: %w", err)
 	}
 
-	// Add user as workspace admin (this happens automatically via trigger, but we can be explicit)
-	// Note: The trigger will handle this, but we can add it explicitly for clarity
 	// The trigger in migration 008 automatically adds the owner as admin
+	// But we'll add it explicitly for clarity and to ensure it happens
+	memberQuery := `
+		INSERT INTO workspace_members (workspace_id, user_id, role, joined_at)
+		VALUES ($1, $2, 'admin', $3)
+		ON CONFLICT (workspace_id, user_id) DO NOTHING
+	`
+	_, err = tx.ExecContext(ctx, memberQuery,
+		workspace.WorkspaceID,
+		user.UserID,
+		time.Now(),
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to add workspace member: %w", err)
+	}
 
 	// Commit transaction
 	if err := tx.Commit(); err != nil {
@@ -278,7 +330,7 @@ func (s *AuthService) GetUserWorkspaces(ctx context.Context, userID uuid.UUID) (
 	return s.userRepo.GetUserWorkspaces(ctx, userID)
 }
 
-// generateUsername generates a unique username from an email
+// generateUsername generates a username from an email (without uniqueness check)
 func generateUsername(email string) string {
 	// Take part before @ and sanitize
 	parts := strings.Split(email, "@")
@@ -292,8 +344,39 @@ func generateUsername(email string) string {
 	username = strings.ReplaceAll(username, "+", "_")
 	username = strings.ReplaceAll(username, "-", "_")
 
-	// Add random suffix to ensure uniqueness
-	// In production, this should check for uniqueness in database
-	suffix := uuid.New().String()[:8]
-	return fmt.Sprintf("%s_%s", username, suffix)
+	return username
+}
+
+// generateUsernameWithRetry generates a unique username with database uniqueness check
+func generateUsernameWithRetry(ctx context.Context, tx *sql.Tx, email string) string {
+	baseUsername := generateUsername(email)
+
+	// Try base username first
+	if isUsernameAvailable(ctx, tx, baseUsername) {
+		return baseUsername
+	}
+
+	// Retry with random suffix up to 5 times
+	for i := 0; i < 5; i++ {
+		suffix := uuid.New().String()[:8]
+		candidateUsername := fmt.Sprintf("%s_%s", baseUsername, suffix)
+		if isUsernameAvailable(ctx, tx, candidateUsername) {
+			return candidateUsername
+		}
+	}
+
+	// Fallback: use UUID if all retries fail
+	return fmt.Sprintf("%s_%s", baseUsername, uuid.New().String()[:12])
+}
+
+// isUsernameAvailable checks if a username is available in the database
+func isUsernameAvailable(ctx context.Context, tx *sql.Tx, username string) bool {
+	var count int
+	query := `SELECT COUNT(*) FROM users WHERE username = $1 AND deleted_at IS NULL`
+	err := tx.QueryRowContext(ctx, query, username).Scan(&count)
+	if err != nil {
+		// If error occurs, assume username is not available (safe default)
+		return false
+	}
+	return count == 0
 }

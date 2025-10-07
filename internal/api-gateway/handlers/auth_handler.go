@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"twigger-backend/backend/auth-service/domain/service"
@@ -76,7 +77,7 @@ func (h *AuthHandler) HandleVerify(w http.ResponseWriter, r *http.Request) {
 
 	email, ok := claims["email"].(string)
 	if !ok || email == "" {
-		utils.RespondError(w, errors.New("email not found in token"))
+		utils.RespondUnauthorized(w, "Invalid authentication token")
 		return
 	}
 
@@ -120,7 +121,10 @@ func (h *AuthHandler) HandleVerify(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if err != nil {
-		utils.RespondError(w, fmt.Errorf("authentication failed: %w", err))
+		// Log detailed error server-side
+		logError(r.Context(), "authentication failed", err, firebaseUID)
+		// Return generic error to client
+		utils.RespondError(w, errors.New("authentication failed"))
 		return
 	}
 
@@ -142,7 +146,10 @@ func (h *AuthHandler) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	// Get user UUID by Firebase UID
 	userID, err := h.getUserIDByFirebaseUID(ctx, firebaseUID)
 	if err != nil {
-		utils.RespondError(w, fmt.Errorf("user not found: %w", err))
+		// Log detailed error server-side
+		logError(ctx, "user lookup failed in logout", err, firebaseUID)
+		// Return generic error to client
+		utils.RespondUnauthorized(w, "User not authenticated")
 		return
 	}
 
@@ -156,7 +163,10 @@ func (h *AuthHandler) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	// Logout
 	sessionsRevoked, err := h.authService.Logout(ctx, userID, req.DeviceID, req.RevokeAll)
 	if err != nil {
-		utils.RespondError(w, fmt.Errorf("logout failed: %w", err))
+		// Log detailed error server-side
+		logError(ctx, "logout failed", err, firebaseUID)
+		// Return generic error to client
+		utils.RespondError(w, errors.New("logout failed"))
 		return
 	}
 
@@ -181,21 +191,30 @@ func (h *AuthHandler) HandleMe(w http.ResponseWriter, r *http.Request) {
 	// Get user UUID by Firebase UID
 	userID, err := h.getUserIDByFirebaseUID(ctx, firebaseUID)
 	if err != nil {
-		utils.RespondError(w, fmt.Errorf("user not found: %w", err))
+		// Log detailed error server-side
+		logError(ctx, "user lookup failed in /me", err, firebaseUID)
+		// Return generic error to client
+		utils.RespondUnauthorized(w, "User not authenticated")
 		return
 	}
 
 	// Get user
 	user, err := h.authService.GetUser(ctx, userID)
 	if err != nil {
-		utils.RespondError(w, fmt.Errorf("user not found: %w", err))
+		// Log detailed error server-side
+		logError(ctx, "failed to get user details", err, firebaseUID)
+		// Return generic error to client
+		utils.RespondError(w, errors.New("failed to retrieve user information"))
 		return
 	}
 
 	// Get user workspaces
 	workspaces, err := h.authService.GetUserWorkspaces(ctx, userID)
 	if err != nil {
-		utils.RespondError(w, fmt.Errorf("failed to get workspaces: %w", err))
+		// Log detailed error server-side
+		logError(ctx, "failed to get user workspaces", err, firebaseUID)
+		// Return generic error to client
+		utils.RespondError(w, errors.New("failed to retrieve workspaces"))
 		return
 	}
 
@@ -263,4 +282,11 @@ func (h *AuthHandler) getUserIDByFirebaseUID(ctx context.Context, firebaseUID st
 		return uuid.Nil, err
 	}
 	return user.UserID, nil
+}
+
+// logError logs detailed error information server-side (not exposed to client)
+func logError(ctx context.Context, message string, err error, firebaseUID string) {
+	// Use structured logging in production
+	// For now, use standard log package
+	log.Printf("ERROR: %s | Firebase UID: %s | Error: %v", message, firebaseUID, err)
 }

@@ -73,12 +73,16 @@ func (m *AuthMiddleware) RequireAuth(next http.Handler) http.Handler {
 		// Extract user ID from Firebase token (UID field)
 		userID := firebaseToken.UID
 		if userID == "" {
-			log.Printf("DEBUG: Firebase token UID is empty. Token: %+v", firebaseToken)
+			// Log error without exposing token details
+			log.Printf("ERROR: Firebase token UID is empty")
 			utils.RespondUnauthorized(w, "Invalid user ID in token")
 			return
 		}
 
-		log.Printf("DEBUG: Authenticated user: %s", userID)
+		// Only log in debug mode, without exposing user ID
+		if os.Getenv("LOG_LEVEL") == "debug" {
+			log.Printf("DEBUG: User authenticated successfully")
+		}
 
 		// Store user ID and claims in context
 		ctx := utils.SetUserID(r.Context(), userID)
@@ -183,8 +187,12 @@ func (m *AuthMiddleware) verifyFirebaseToken(ctx context.Context, token string) 
 	// Verify the token using Firebase
 	decodedToken, err := firebase.VerifyIDToken(ctx, token)
 	if err != nil {
-		// Log the error for debugging
-		log.Printf("Firebase token verification failed: %v", err)
+		// Log the error without sensitive details
+		if os.Getenv("LOG_LEVEL") == "debug" {
+			log.Printf("Firebase token verification failed: %v", err)
+		} else {
+			log.Printf("Firebase token verification failed")
+		}
 
 		// If verification fails and we're in development mode with no credentials, return mock
 		credPath := os.Getenv("FIREBASE_CREDENTIALS_PATH")
@@ -198,7 +206,10 @@ func (m *AuthMiddleware) verifyFirebaseToken(ctx context.Context, token string) 
 		return nil, fmt.Errorf("invalid token: %w", err)
 	}
 
-	log.Printf("Firebase token verified successfully for user: %v", decodedToken.UID)
+	// Only log in debug mode, without exposing UID
+	if os.Getenv("LOG_LEVEL") == "debug" {
+		log.Printf("Firebase token verified successfully")
+	}
 
 	// Return the claims
 	return decodedToken.Claims, nil

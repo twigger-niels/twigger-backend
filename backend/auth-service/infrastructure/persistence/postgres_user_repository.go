@@ -5,11 +5,14 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"strings"
 	"time"
-	"twigger-backend/backend/auth-service/domain/entity"
-	"twigger-backend/backend/auth-service/domain/repository"
 
 	"github.com/google/uuid"
+
+	"twigger-backend/backend/auth-service/domain/entity"
+	"twigger-backend/backend/auth-service/domain/repository"
 )
 
 // PostgresUserRepository implements UserRepository using PostgreSQL
@@ -44,6 +47,13 @@ func (r *PostgresUserRepository) Create(ctx context.Context, user *entity.User) 
 	// Set timestamps
 	if user.CreatedAt.IsZero() {
 		user.CreatedAt = time.Now()
+	}
+
+	// Validate location WKT format to prevent SQL injection
+	if user.Location != nil {
+		if err := validateWKT(*user.Location); err != nil {
+			return fmt.Errorf("invalid location format: %w", err)
+		}
 	}
 
 	_, err := r.db.ExecContext(ctx, query,
@@ -102,7 +112,7 @@ func (r *PostgresUserRepository) GetByID(ctx context.Context, userID uuid.UUID) 
 	)
 
 	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("user not found: %s", userID)
+		return nil, sql.ErrNoRows // Return standard error, don't expose user ID
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user: %w", err)
@@ -143,10 +153,10 @@ func (r *PostgresUserRepository) GetByFirebaseUID(ctx context.Context, firebaseU
 	)
 
 	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("user not found with firebase_uid: %s", firebaseUID)
+		return nil, sql.ErrNoRows // Return standard error, don't expose Firebase UID
 	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user by firebase_uid: %w", err)
+		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
 
 	return user, nil
@@ -184,10 +194,10 @@ func (r *PostgresUserRepository) GetByEmail(ctx context.Context, email string) (
 	)
 
 	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("user not found with email: %s", email)
+		return nil, sql.ErrNoRows // Return standard error, don't expose email
 	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user by email: %w", err)
+		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
 
 	return user, nil
@@ -195,6 +205,13 @@ func (r *PostgresUserRepository) GetByEmail(ctx context.Context, email string) (
 
 // Update updates an existing user
 func (r *PostgresUserRepository) Update(ctx context.Context, user *entity.User) error {
+	// Validate location WKT format to prevent SQL injection
+	if user.Location != nil {
+		if err := validateWKT(*user.Location); err != nil {
+			return fmt.Errorf("invalid location format: %w", err)
+		}
+	}
+
 	query := `
 		UPDATE users
 		SET
@@ -239,7 +256,7 @@ func (r *PostgresUserRepository) Update(ctx context.Context, user *entity.User) 
 	}
 
 	if rowsAffected == 0 {
-		return fmt.Errorf("user not found: %s", user.UserID)
+		return sql.ErrNoRows // Return standard error, don't expose user ID
 	}
 
 	return nil
@@ -264,7 +281,7 @@ func (r *PostgresUserRepository) SoftDelete(ctx context.Context, userID uuid.UUI
 	}
 
 	if rowsAffected == 0 {
-		return fmt.Errorf("user not found: %s", userID)
+		return sql.ErrNoRows // Return standard error, don't expose user ID
 	}
 
 	return nil
@@ -289,7 +306,7 @@ func (r *PostgresUserRepository) UpdateLastLogin(ctx context.Context, userID uui
 	}
 
 	if rowsAffected == 0 {
-		return fmt.Errorf("user not found: %s", userID)
+		return sql.ErrNoRows // Return standard error, don't expose user ID
 	}
 
 	return nil
@@ -424,4 +441,34 @@ func scanUser(scanner interface{ Scan(...interface{}) error }) (*entity.User, er
 	}
 
 	return user, nil
+}
+
+// validateWKT validates a Well-Known Text (WKT) string to prevent SQL injection
+// Accepts POINT format: "POINT(longitude latitude)"
+// Example: "POINT(-122.4194 37.7749)"
+func validateWKT(wkt string) error {
+	if wkt == "" {
+		return nil // Empty string is valid (NULL location)
+	}
+
+	// Trim whitespace
+	wkt = strings.TrimSpace(wkt)
+
+	// Validate POINT format with regex
+	// Pattern: POINT(decimal decimal) where decimal can be negative and have optional decimal places
+	// Longitude range: -180 to 180
+	// Latitude range: -90 to 90
+	pointRegex := regexp.MustCompile(`^POINT\s*\(\s*(-?[0-9]{1,3}(?:\.[0-9]+)?)\s+(-?[0-9]{1,2}(?:\.[0-9]+)?)\s*\)$`)
+
+	matches := pointRegex.FindStringSubmatch(wkt)
+	if matches == nil {
+		return fmt.Errorf("invalid WKT format, expected POINT(longitude latitude)")
+	}
+
+	// Extract and validate coordinates
+	// Note: matches[0] is the full match, matches[1] is longitude, matches[2] is latitude
+	// Actual coordinate validation would require parsing to float and checking bounds
+	// For SQL injection prevention, regex validation is sufficient
+
+	return nil
 }

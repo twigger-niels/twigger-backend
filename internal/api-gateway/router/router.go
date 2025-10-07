@@ -1,8 +1,6 @@
 package router
 
 import (
-	"time"
-
 	"github.com/gorilla/mux"
 	httpSwagger "github.com/swaggo/http-swagger"
 
@@ -23,9 +21,9 @@ func NewRouter(h *handlers.Handlers, authMiddleware *middleware.AuthMiddleware, 
 	r.Use(middleware.LoggingMiddleware)
 	r.Use(middleware.CORSMiddleware)
 
-	// Rate limiting (100 requests per minute per IP)
-	rateLimiter := middleware.NewRateLimiter(100, time.Minute)
-	r.Use(rateLimiter.Limit)
+	// Rate limiting middleware (token bucket algorithm with endpoint-specific limits)
+	rateLimiter := middleware.NewRateLimiter()
+	r.Use(middleware.RateLimitMiddleware(rateLimiter))
 
 	// Health check endpoints (no auth required)
 	r.HandleFunc("/health", h.HealthHandler.HealthCheck).Methods("GET")
