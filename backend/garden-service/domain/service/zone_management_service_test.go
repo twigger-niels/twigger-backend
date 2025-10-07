@@ -47,11 +47,6 @@ func (m *MockGardenZoneRepository) Delete(ctx context.Context, zoneID string) er
 	return args.Error(0)
 }
 
-func (m *MockGardenZoneRepository) CalculateArea(ctx context.Context, zoneID string) (float64, error) {
-	args := m.Called(ctx, zoneID)
-	return args.Get(0).(float64), args.Error(1)
-}
-
 func (m *MockGardenZoneRepository) ValidateZoneWithinGarden(ctx context.Context, gardenID, zoneGeometryGeoJSON string) error {
 	args := m.Called(ctx, gardenID, zoneGeometryGeoJSON)
 	return args.Error(0)
@@ -67,9 +62,22 @@ func (m *MockGardenZoneRepository) CalculateTotalArea(ctx context.Context, garde
 	return args.Get(0).(float64), args.Error(1)
 }
 
+func (m *MockGardenZoneRepository) CalculateZoneArea(ctx context.Context, zoneID string) (float64, error) {
+	args := m.Called(ctx, zoneID)
+	return args.Get(0).(float64), args.Error(1)
+}
+
 func (m *MockGardenZoneRepository) CountByGardenID(ctx context.Context, gardenID string) (int, error) {
 	args := m.Called(ctx, gardenID)
 	return args.Get(0).(int), args.Error(1)
+}
+
+func (m *MockGardenZoneRepository) FindByIDs(ctx context.Context, zoneIDs []string) ([]*entity.GardenZone, error) {
+	args := m.Called(ctx, zoneIDs)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*entity.GardenZone), args.Error(1)
 }
 
 // Test CreateZone

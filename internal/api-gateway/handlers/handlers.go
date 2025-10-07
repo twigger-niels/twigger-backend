@@ -9,6 +9,7 @@ type Handlers struct {
 	ZoneHandler           *ZoneHandler
 	PlantPlacementHandler *PlantPlacementHandler
 	HealthHandler         *HealthHandler
+	AuthHandler           *AuthHandler
 }
 
 // NewHandlers creates all handlers
@@ -19,5 +20,6 @@ func NewHandlers(db *sql.DB, plantHandler *PlantHandler, gardenHandler *GardenHa
 		ZoneHandler:           zoneHandler,
 		PlantPlacementHandler: plantPlacementHandler,
 		HealthHandler:         NewHealthHandler(db),
+		AuthHandler:           NewAuthHandler(db),
 	}
 }

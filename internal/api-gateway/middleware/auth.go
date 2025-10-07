@@ -3,10 +3,13 @@ package middleware
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"strings"
 
+	"firebase.google.com/go/v4/auth"
+	"twigger-backend/internal/api-gateway/firebase"
 	"twigger-backend/internal/api-gateway/utils"
 )
 
@@ -30,6 +33,12 @@ func NewAuthMiddleware(projectID string) *AuthMiddleware {
 // RequireAuth is middleware that requires authentication
 func (m *AuthMiddleware) RequireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Skip auth for OPTIONS (preflight) requests - handled by CORS middleware
+		if r.Method == "OPTIONS" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		// Skip auth if disabled (development mode)
 		if !m.enabled {
 			// Set a default user ID for development
@@ -55,26 +64,30 @@ func (m *AuthMiddleware) RequireAuth(next http.Handler) http.Handler {
 		token := parts[1]
 
 		// Verify Firebase JWT token
-		claims, err := m.verifyFirebaseToken(r.Context(), token)
+		firebaseToken, err := m.verifyFirebaseTokenFull(r.Context(), token)
 		if err != nil {
 			utils.RespondUnauthorized(w, fmt.Sprintf("Invalid token: %v", err))
 			return
 		}
 
-		// Extract user ID from claims
-		userID, ok := claims["sub"].(string)
-		if !ok || userID == "" {
+		// Extract user ID from Firebase token (UID field)
+		userID := firebaseToken.UID
+		if userID == "" {
+			log.Printf("DEBUG: Firebase token UID is empty. Token: %+v", firebaseToken)
 			utils.RespondUnauthorized(w, "Invalid user ID in token")
 			return
 		}
 
-		// Store user ID in context
+		log.Printf("DEBUG: Authenticated user: %s", userID)
+
+		// Store user ID and claims in context
 		ctx := utils.SetUserID(r.Context(), userID)
+		ctx = context.WithValue(ctx, "firebase_claims", firebaseToken.Claims)
 
 		// Extract language preferences from user claims if available
-		if lang, ok := claims["preferred_language"].(string); ok {
+		if lang, ok := firebaseToken.Claims["preferred_language"].(string); ok {
 			var countryID *string
-			if country, ok := claims["country"].(string); ok {
+			if country, ok := firebaseToken.Claims["country"].(string); ok {
 				countryID = &country
 			}
 
@@ -130,21 +143,63 @@ func (m *AuthMiddleware) OptionalAuth(next http.Handler) http.Handler {
 	})
 }
 
-// verifyFirebaseToken verifies a Firebase JWT token
-// TODO: Implement actual Firebase Admin SDK verification
-func (m *AuthMiddleware) verifyFirebaseToken(ctx context.Context, token string) (map[string]interface{}, error) {
-	// For now, return a mock implementation
-	// In production, this should use Firebase Admin SDK:
-	//
-	// import firebase "firebase.google.com/go/v4"
-	// import "firebase.google.com/go/v4/auth"
-	//
-	// app, err := firebase.NewApp(ctx, nil)
-	// client, err := app.Auth(ctx)
-	// token, err := client.VerifyIDToken(ctx, idToken)
-	// return token.Claims, nil
+// verifyFirebaseTokenFull verifies a Firebase JWT token and returns the full token
+func (m *AuthMiddleware) verifyFirebaseTokenFull(ctx context.Context, token string) (*auth.Token, error) {
+	// Check if Firebase is initialized
+	if !firebase.IsInitialized() {
+		// Try to initialize Firebase
+		if err := firebase.InitializeFirebase(ctx); err != nil {
+			return nil, fmt.Errorf("Firebase not initialized: %w", err)
+		}
+	}
 
-	return map[string]interface{}{
-		"sub": "mock-user-id",
-	}, nil
+	// Verify the token using Firebase
+	decodedToken, err := firebase.VerifyIDToken(ctx, token)
+	if err != nil {
+		return nil, fmt.Errorf("invalid token: %w", err)
+	}
+
+	return decodedToken, nil
+}
+
+// verifyFirebaseToken verifies a Firebase JWT token using Firebase Admin SDK (returns claims only)
+func (m *AuthMiddleware) verifyFirebaseToken(ctx context.Context, token string) (map[string]interface{}, error) {
+	// Check if Firebase is initialized
+	if !firebase.IsInitialized() {
+		// Try to initialize Firebase
+		if err := firebase.InitializeFirebase(ctx); err != nil {
+			// If initialization fails and we're in development mode, return mock
+			if !m.enabled {
+				return map[string]interface{}{
+					"sub":            "dev-firebase-user",
+					"email":          "dev@example.com",
+					"email_verified": true,
+				}, nil
+			}
+			return nil, fmt.Errorf("Firebase not initialized: %w", err)
+		}
+	}
+
+	// Verify the token using Firebase
+	decodedToken, err := firebase.VerifyIDToken(ctx, token)
+	if err != nil {
+		// Log the error for debugging
+		log.Printf("Firebase token verification failed: %v", err)
+
+		// If verification fails and we're in development mode with no credentials, return mock
+		credPath := os.Getenv("FIREBASE_CREDENTIALS_PATH")
+		if credPath == "" && !m.enabled {
+			return map[string]interface{}{
+				"sub":            "dev-firebase-user",
+				"email":          "dev@example.com",
+				"email_verified": true,
+			}, nil
+		}
+		return nil, fmt.Errorf("invalid token: %w", err)
+	}
+
+	log.Printf("Firebase token verified successfully for user: %v", decodedToken.UID)
+
+	// Return the claims
+	return decodedToken.Claims, nil
 }

@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Twigger Firebase Auth Test</title>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 { color: #2c5f2d; }
+        h3 { color: #4a7c59; margin-top: 30px; }
+        button {
+            padding: 12px 24px;
+            margin: 10px 5px;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+            border-radius: 4px;
+            background: #2c5f2d;
+            color: white;
+            transition: background 0.3s;
+        }
+        button:hover { background: #1e4620; }
+        button.secondary {
+            background: #6c757d;
+        }
+        button.secondary:hover {
+            background: #5a6268;
+        }
+        pre {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            border: 1px solid #dee2e6;
+            overflow-x: auto;
+            font-size: 13px;
+        }
+        .token {
+            word-break: break-all;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: bold;
+        }
+        .status.success { background: #d4edda; color: #155724; }
+        .status.error { background: #f8d7da; color: #721c24; }
+        .status.info { background: #d1ecf1; color: #0c5460; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🌱 Twigger Firebase Authentication Test</h1>
+
+        <div>
+            <button id="google-signin">🔐 Sign in with Google</button>
+            <button class="secondary" id="signout">Sign Out</button>
+            <button class="secondary" id="refresh-token">🔄 Refresh Token</button>
+        </div>
+
+        <h3>Authentication Status: <span id="auth-status" class="status info">Not signed in</span></h3>
+
+        <h3>User Info:</h3>
+        <pre id="user-info">Not signed in</pre>
+
+        <h3>Firebase ID Token:</h3>
+        <pre id="token" class="token">No token yet</pre>
+
+        <h3>Test Backend API:</h3>
+        <div>
+            <button id="test-verify">POST /auth/verify</button>
+            <button id="test-me">GET /auth/me</button>
+            <button id="test-logout">POST /auth/logout</button>
+        </div>
+
+        <h3>API Response:</h3>
+        <pre id="api-response">No API calls yet</pre>
+    </div>
+
+    <script>
+        // Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyDlnVoAEG0o_EuA9OCscgWsG1aSAmpxfiY",
+            authDomain: "twigger-prod.firebaseapp.com",
+            projectId: "twigger-prod"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+
+        let currentToken = null;
+
+        // Auth state observer
+        auth.onAuthStateChanged(async (user) => {
+            if (user) {
+                document.getElementById('auth-status').textContent = 'Signed in';
+                document.getElementById('auth-status').className = 'status success';
+
+                document.getElementById('user-info').textContent = JSON.stringify({
+                    uid: user.uid,
+                    email: user.email,
+                    displayName: user.displayName,
+                    photoURL: user.photoURL,
+                    emailVerified: user.emailVerified,
+                    provider: user.providerData[0]?.providerId
+                }, null, 2);
+
+                currentToken = await user.getIdToken();
+                document.getElementById('token').textContent = currentToken;
+
+                console.log('User signed in:', user);
+                console.log('ID Token:', currentToken);
+            } else {
+                document.getElementById('auth-status').textContent = 'Not signed in';
+                document.getElementById('auth-status').className = 'status info';
+                document.getElementById('user-info').textContent = 'Not signed in';
+                document.getElementById('token').textContent = 'No token yet';
+                currentToken = null;
+            }
+        });
+
+        // Google Sign-In
+        document.getElementById('google-signin').addEventListener('click', async () => {
+            const provider = new firebase.auth.GoogleAuthProvider();
+            try {
+                await auth.signInWithPopup(provider);
+            } catch (error) {
+                alert('Error signing in: ' + error.message);
+                console.error('Sign in error:', error);
+            }
+        });
+
+        // Sign Out
+        document.getElementById('signout').addEventListener('click', () => {
+            auth.signOut();
+            document.getElementById('api-response').textContent = 'No API calls yet';
+        });
+
+        // Refresh Token
+        document.getElementById('refresh-token').addEventListener('click', async () => {
+            const user = auth.currentUser;
+            if (user) {
+                currentToken = await user.getIdToken(true);
+                document.getElementById('token').textContent = currentToken;
+                alert('Token refreshed! (15-minute expiry reset)');
+            } else {
+                alert('Not signed in');
+            }
+        });
+
+        // Helper function to call backend API
+        async function callAPI(url, method = 'GET', body = null) {
+            if (!currentToken) {
+                alert('Please sign in first');
+                return;
+            }
+
+            try {
+                const options = {
+                    method,
+                    headers: {
+                        'Authorization': 'Bearer ' + currentToken,
+                        'Content-Type': 'application/json'
+                    }
+                };
+
+                if (body) {
+                    options.body = JSON.stringify(body);
+                }
+
+                console.log(`Calling ${method} ${url}`, body || '');
+                const response = await fetch(url, options);
+                const data = await response.json();
+
+                document.getElementById('api-response').textContent =
+                    `Status: ${response.status}\n\n` +
+                    JSON.stringify(data, null, 2);
+
+                if (response.ok) {
+                    console.log('API success:', data);
+                } else {
+                    console.error('API error:', data);
+                }
+            } catch (error) {
+                document.getElementById('api-response').textContent = 'Error: ' + error.message;
+                console.error('API call error:', error);
+            }
+        }
+
+        // Test /auth/verify endpoint
+        document.getElementById('test-verify').addEventListener('click', () => {
+            callAPI('http://localhost:8080/api/v1/auth/verify', 'POST', {
+                device_id: 'browser-test-' + Date.now()
+            });
+        });
+
+        // Test /auth/me endpoint
+        document.getElementById('test-me').addEventListener('click', () => {
+            callAPI('http://localhost:8080/api/v1/auth/me');
+        });
+
+        // Test /auth/logout endpoint
+        document.getElementById('test-logout').addEventListener('click', () => {
+            callAPI('http://localhost:8080/api/v1/auth/logout', 'POST', {
+                device_id: 'browser-test',
+                revoke_all: false
+            });
+        });
+    </script>
+</body>
+</html>

@@ -28,8 +28,8 @@ func (m *MockGardenPlantRepository) FindByID(ctx context.Context, gardenPlantID 
 	return args.Get(0).(*entity.GardenPlant), args.Error(1)
 }
 
-func (m *MockGardenPlantRepository) FindByGardenID(ctx context.Context, gardenID string) ([]*entity.GardenPlant, error) {
-	args := m.Called(ctx, gardenID)
+func (m *MockGardenPlantRepository) FindByGardenID(ctx context.Context, gardenID string, includeRemoved bool) ([]*entity.GardenPlant, error) {
+	args := m.Called(ctx, gardenID, includeRemoved)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -96,8 +96,37 @@ func (m *MockGardenPlantRepository) BulkCreate(ctx context.Context, gardenPlants
 	return args.Error(0)
 }
 
-func (m *MockGardenPlantRepository) CountByGardenID(ctx context.Context, gardenID string) (int, error) {
+func (m *MockGardenPlantRepository) CountByGardenID(ctx context.Context, gardenID string, includeRemoved bool) (int, error) {
+	args := m.Called(ctx, gardenID, includeRemoved)
+	return args.Get(0).(int), args.Error(1)
+}
+
+func (m *MockGardenPlantRepository) FindByZoneID(ctx context.Context, zoneID string, includeRemoved bool) ([]*entity.GardenPlant, error) {
+	args := m.Called(ctx, zoneID, includeRemoved)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*entity.GardenPlant), args.Error(1)
+}
+
+func (m *MockGardenPlantRepository) FindByPlantID(ctx context.Context, plantID string) ([]*entity.GardenPlant, error) {
+	args := m.Called(ctx, plantID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*entity.GardenPlant), args.Error(1)
+}
+
+func (m *MockGardenPlantRepository) FindActiveInGarden(ctx context.Context, gardenID string) ([]*entity.GardenPlant, error) {
 	args := m.Called(ctx, gardenID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*entity.GardenPlant), args.Error(1)
+}
+
+func (m *MockGardenPlantRepository) CountByPlantID(ctx context.Context, plantID string) (int, error) {
+	args := m.Called(ctx, plantID)
 	return args.Get(0).(int), args.Error(1)
 }
 
@@ -133,7 +162,8 @@ func TestPlantPlacementService_PlacePlant_Success(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
 	assert.NotEmpty(t, result.GardenPlantID)
-	assert.False(t, result.PlantedAt.IsZero())
+	assert.NotNil(t, result.PlantedDate)
+	assert.False(t, result.PlantedDate.IsZero())
 	assert.False(t, result.CreatedAt.IsZero())
 	assert.False(t, result.UpdatedAt.IsZero())
 	assert.Equal(t, entity.HealthStatusHealthy, *result.HealthStatus) // Default
@@ -408,7 +438,7 @@ func TestPlantPlacementService_UpdatePlantPlacement_Success(t *testing.T) {
 		PlantID:         plantID,
 		LocationGeoJSON: location,
 		CreatedAt:       createdAt,
-		PlantedAt:       plantedAt,
+		PlantedDate:     &plantedAt,
 		HealthStatus:    &healthStatus,
 	}
 
@@ -429,7 +459,8 @@ func TestPlantPlacementService_UpdatePlantPlacement_Success(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, newStatus, *result.HealthStatus)
 	assert.Equal(t, createdAt, result.CreatedAt) // Preserved
-	assert.Equal(t, plantedAt, result.PlantedAt) // Preserved
+	assert.NotNil(t, result.PlantedDate)
+	assert.Equal(t, plantedAt, *result.PlantedDate) // Preserved
 	assert.True(t, result.UpdatedAt.After(createdAt)) // Updated
 	mockPlantRepo.AssertExpectations(t)
 }

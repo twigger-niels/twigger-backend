@@ -37,6 +37,24 @@ func NewRouter(h *handlers.Handlers, authMiddleware *middleware.AuthMiddleware, 
 	// API v1 routes
 	api := r.PathPrefix("/api/v1").Subrouter()
 
+	// Auth routes
+	authRouter := api.PathPrefix("/auth").Subrouter()
+
+	// POST /api/v1/auth/verify - Complete authentication (uses middleware to verify token)
+	verifyRouter := authRouter.PathPrefix("/verify").Subrouter()
+	verifyRouter.Use(authMiddleware.RequireAuth)
+	verifyRouter.HandleFunc("", h.AuthHandler.HandleVerify).Methods("POST", "OPTIONS")
+
+	// POST /api/v1/auth/logout - Logout (requires auth)
+	logoutRouter := authRouter.PathPrefix("/logout").Subrouter()
+	logoutRouter.Use(authMiddleware.RequireAuth)
+	logoutRouter.HandleFunc("", h.AuthHandler.HandleLogout).Methods("POST", "OPTIONS")
+
+	// GET /api/v1/auth/me - Get current user (requires auth)
+	meRouter := authRouter.PathPrefix("/me").Subrouter()
+	meRouter.Use(authMiddleware.RequireAuth)
+	meRouter.HandleFunc("", h.AuthHandler.HandleMe).Methods("GET", "OPTIONS")
+
 	// Plant routes (optional auth for search, required for modifications)
 	plantRouter := api.PathPrefix("/plants").Subrouter()
 

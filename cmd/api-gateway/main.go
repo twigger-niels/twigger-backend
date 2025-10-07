@@ -32,6 +32,7 @@ import (
 
 	_ "github.com/lib/pq"
 
+	"twigger-backend/internal/api-gateway/firebase"
 	"twigger-backend/internal/api-gateway/handlers"
 	"twigger-backend/internal/api-gateway/middleware"
 	"twigger-backend/internal/api-gateway/router"
@@ -66,6 +67,15 @@ func main() {
 		log.Fatalf("Failed to ping database: %v", err)
 	}
 	log.Println("Successfully connected to database")
+
+	// Initialize Firebase (optional - will auto-initialize on first request if not done here)
+	if err := firebase.InitializeFirebase(ctx); err != nil {
+		// Log warning but don't fail - Firebase can be initialized lazily
+		log.Printf("Warning: Firebase initialization failed (will retry on first request): %v", err)
+		log.Println("If Firebase auth is required, set FIREBASE_PROJECT_ID and FIREBASE_CREDENTIALS_PATH")
+	} else {
+		log.Println("Successfully initialized Firebase")
+	}
 
 	// Initialize repositories
 	plantRepository := plantRepo.NewPostgresPlantRepository(db)

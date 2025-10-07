@@ -373,17 +373,88 @@ This document tracks all development tasks for the Authentication Service. The a
 ## Bug Fixes & Issues
 *Track bugs discovered during development*
 
-### Critical Issues
+### Critical Issues (From Code Review - 2025-10-07)
+- [ ] 🔴 **CRITICAL: Transaction not working in createNewUser()** (auth_service.go:125-182)
+  - **Issue**: Transaction created but repository methods don't use it - all operations execute on main connection
+  - **Impact**: Race conditions, partial user creation, data inconsistency
+  - **Fix**: Pass transaction to repository methods OR execute raw SQL within service using tx.ExecContext()
+  - **Priority**: Must fix before Phase 3
+  - **Status**: Identified in code review
+
+- [ ] 🔴 **CRITICAL: Information disclosure in error messages** (Multiple locations)
+  - **Issue**: Error messages leak database structure and user existence (account enumeration)
+  - **Impact**: Security vulnerability - attackers can determine if accounts exist
+  - **Fix**: Use generic error messages for clients, log detailed errors server-side
+  - **Locations**: auth_handler.go:79,145; postgres_user_repository.go:105,147,185
+  - **Priority**: Must fix before Phase 3
+  - **Status**: Identified in code review
+
+- [ ] 🔴 **CRITICAL: SQL injection risk in location field** (postgres_user_repository.go:35,210)
+  - **Issue**: ST_GeogFromText() with unsanitized user input
+  - **Impact**: SQL injection vulnerability, database compromise
+  - **Fix**: Validate and sanitize WKT format with regex before database operation
+  - **Priority**: Must fix before Phase 3
+  - **Status**: Identified in code review
+
+- [ ] 🔴 **CRITICAL: No rate limiting on auth endpoints** (router.go:43-56)
+  - **Issue**: Auth endpoints lack rate limiting
+  - **Impact**: Brute force attacks, credential stuffing, Firebase quota exhaustion
+  - **Fix**: Add aggressive rate limiting (5 req/min for /verify, 10 req/min for /logout)
+  - **Priority**: Must fix before Phase 3
+  - **Status**: Identified in code review
+
+- [ ] 🔴 **CRITICAL: Debug logging in production** (firebase.go:86, auth.go:76,81,201)
+  - **Issue**: Sensitive token data and PII logged to stdout/logs
+  - **Impact**: PII leakage, GDPR violations, token exposure in logs
+  - **Fix**: Use environment-aware logging, redact sensitive data
+  - **Priority**: Must fix before Phase 3
+  - **Status**: Identified in code review
+
 - [ ] 📋 Verify workspace schema exists in migrations
   - **Risk**: HIGH - Implementation cannot proceed without workspace tables
   - **Action**: Immediate schema verification required
-  - **Status**: Needs investigation
+  - **Status**: ✅ VERIFIED - Tables exist in migration 008
 
-### High Priority Issues
+### High Priority Issues (From Code Review - 2025-10-07)
+- [ ] 🟠 **HIGH: Missing panic recovery in transaction** (auth_service.go:139)
+  - **Issue**: Transaction lacks panic recovery, can cause goroutine crashes
+  - **Impact**: Resource leaks, uncaught panics
+  - **Fix**: Add defer with panic recovery that calls tx.Rollback()
+  - **Priority**: Fix before Phase 3
+  - **Status**: Identified in code review
+
+- [ ] 🟠 **HIGH: Race condition in Firebase initialization** (firebase.go:22-62)
+  - **Issue**: initError can be read while being written (sync.Once protects init but not error variable)
+  - **Impact**: Potential race condition reading stale error value
+  - **Fix**: Add sync.RWMutex for error variable access
+  - **Priority**: Fix before Phase 3
+  - **Status**: Identified in code review
+
+- [ ] 🟠 **HIGH: Username collision not handled** (auth_service.go:282-299)
+  - **Issue**: generateUsername() adds random suffix but doesn't verify uniqueness in database
+  - **Impact**: Potential duplicate username errors on insertion
+  - **Fix**: Check database for uniqueness, retry up to 5 times
+  - **Priority**: Fix before Phase 3
+  - **Status**: Identified in code review
+
+- [ ] 🟠 **HIGH: Session expiry not validated** (Session usage)
+  - **Issue**: Sessions created with 30-day expiry but never checked during authentication
+  - **Impact**: Stale sessions persist, potential security risk
+  - **Fix**: Add session validation in middleware or handlers
+  - **Priority**: Fix before Phase 3
+  - **Status**: Identified in code review
+
+- [ ] 🟠 **HIGH: No CSRF protection** (Router configuration)
+  - **Issue**: POST endpoints lack CSRF protection tokens
+  - **Impact**: CSRF attacks possible
+  - **Fix**: Add CSRF middleware (gorilla/csrf)
+  - **Priority**: Fix before Phase 3
+  - **Status**: Identified in code review
+
 - [ ] 📋 Firebase Admin SDK requires service account credentials
   - **Issue**: Cannot deploy without credential file
   - **Solution**: Store in Google Secret Manager
-  - **Status**: Pending credential generation
+  - **Status**: ✅ COMPLETE - Credentials configured
 
 ### Medium Priority Issues
 - [ ] 📋 Apple Sign-In requires paid developer account

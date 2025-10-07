@@ -17,7 +17,21 @@
       "Bash(mkdir:*)",
       "Bash(cp:*)",
       "Bash(mv:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(docker-compose:*)",
+      "Bash(timeout:*)",
+      "Bash(DATABASE_URL=\"postgres://postgres:postgres@localhost:5432/twigger?sslmode=disable\" go run cmd/migrate/main.go up)",
+      "Bash(DATABASE_URL=\"postgres://postgres:postgres@localhost:5432/twigger?sslmode=disable\" go run cmd/migrate/main.go force 7)",
+      "Bash(go mod:*)",
+      "Bash(DATABASE_URL=\"postgres://postgres:postgres@localhost:5432/twigger?sslmode=disable\" FIREBASE_PROJECT_ID=twigger-prod FIREBASE_CREDENTIALS_PATH=./secrets/firebase-admin-key.json AUTH_ENABLED=true ENVIRONMENT=development LOG_LEVEL=debug go run cmd/api-gateway/main.go)",
+      "Bash(curl:*)",
+      "Bash(python:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(go test:*)",
+      "Bash(DATABASE_URL=\"postgres://postgres:postgres@localhost:5432/twigger?sslmode=disable\" FIREBASE_PROJECT_ID=twigger-prod FIREBASE_CREDENTIALS_PATH=./secrets/firebase-admin-key.json AUTH_ENABLED=true ENVIRONMENT=development LOG_LEVEL=debug ./bin/api-gateway.exe)",
+      "Bash(DATABASE_URL=\"postgres://postgres:postgres@localhost:5432/twigger?sslmode=disable\" FIREBASE_PROJECT_ID=twigger-prod FIREBASE_CREDENTIALS_PATH=./secrets/firebase-admin-key.json AUTH_ENABLED=true ENVIRONMENT=development LOG_LEVEL=debug ./bin/api-gateway-new.exe)",
+      "Bash(DATABASE_URL=\"postgres://postgres:postgres@localhost:5432/twigger?sslmode=disable\" FIREBASE_PROJECT_ID=twigger-prod FIREBASE_CREDENTIALS_PATH=./secrets/firebase-admin-key.json AUTH_ENABLED=true ENVIRONMENT=development LOG_LEVEL=debug ./bin/api-gateway-final.exe)"
     ],
     "deny": [],
     "ask": []
