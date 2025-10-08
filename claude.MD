@@ -132,7 +132,7 @@ defer tx.Rollback()  // Always rollback if not committed
 tx.Commit()
 ```
 
-## Critical Gotchas (45)
+## Critical Gotchas (51)
 
 ### Repository Implementation (10-14)
 
@@ -320,6 +320,36 @@ Repository: All queries | Service: Business logic | API: HTTP/GraphQL
 
 **45. Transactions in Repository**
 Not service - keeps service database-agnostic
+
+### Flutter/Auth (46-51)
+
+**46. AuthWrapper Navigation Pattern**
+AuthWrapper replaces widgets based on state, doesn't use Navigator. When pushing screens on top (RegisterScreen, LoginScreen), use `Navigator.popUntil((route) => route.isFirst)` to return to AuthWrapper's root, not `Navigator.pop()`.
+
+**47. Two-Phase Email/Password Registration**
+Email/password requires email verification BEFORE backend registration:
+1. Create Firebase account → send verification email
+2. User verifies email
+3. Call `/auth/register` to create backend user
+
+Social logins skip step 2 (no verification needed).
+
+**48. Provider State Change Timing**
+After calling a provider method that changes state, widget rebuild happens asynchronously. Don't navigate immediately after state change - either:
+- Use `popUntil` to return to root and let AuthWrapper handle it
+- Wait for next frame with `WidgetsBinding.instance.addPostFrameCallback()`
+
+**49. Import Dependencies for Logging**
+When adding `AppConfig.enableLogging` checks, remember to import `app_config.dart`. Common in provider and service files.
+
+**50. Firebase Email Verification Requirement**
+Backend `/auth/register` endpoint validates `emailVerified: true` for password provider. Returns 403 with "Please verify your email" if false.
+
+**51. Username Generation Strategy**
+Backend auto-generates from email: `john.doe@example.com` → `john_doe`
+- Sanitizes: replace `.`, `+`, `-` with `_`
+- Retries with transaction-level uniqueness check
+- UUID suffix fallback: `john_doe_8a7b3c21`
 
 ## Security
 

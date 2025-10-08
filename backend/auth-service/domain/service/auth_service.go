@@ -59,38 +59,22 @@ func (s *AuthService) CompleteAuthentication(
 	ipAddress *string,
 	userAgent *string,
 ) (*AuthResponse, error) {
-	// Check if user exists
+	// Check if user exists by Firebase UID
 	user, err := s.userRepo.GetByFirebaseUID(ctx, firebaseUID)
-	if err == nil {
-		// Existing user - update last login and log event
-		if err := s.userRepo.UpdateLastLogin(ctx, user.UserID); err != nil {
-			return nil, fmt.Errorf("failed to update last login: %w", err)
-		}
-
-		// Get user workspaces
-		workspaces, err := s.userRepo.GetUserWorkspaces(ctx, user.UserID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get user workspaces: %w", err)
-		}
-
-		// Create session
-		session, err := s.createSession(ctx, user.UserID, deviceID, ipAddress, userAgent)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create session: %w", err)
-		}
-
-		// Log audit event
-		s.logAuditEvent(ctx, &user.UserID, entity.EventUserLogin, true, ipAddress, userAgent, nil)
-
-		return &AuthResponse{
-			User:       user,
-			Workspaces: workspaces,
-			SessionID:  session.SessionID,
-			IsNewUser:  false,
-		}, nil
+	if err == nil && user != nil {
+		// Existing user found by Firebase UID - update and track provider link
+		return s.handleExistingUserLogin(ctx, user, firebaseUID, provider, photoURL, deviceID, ipAddress, userAgent)
 	}
 
-	// New user - create account + workspace in transaction
+	// User not found by Firebase UID - check if account exists with this email
+	// This handles account linking: user signed in with different provider (e.g., Google then Facebook)
+	existingUser, err := s.userRepo.GetByEmail(ctx, email)
+	if err == nil && existingUser != nil {
+		// Account exists with this email but different Firebase UID - link the new provider
+		return s.handleAccountLinking(ctx, existingUser, firebaseUID, provider, photoURL, deviceID, ipAddress, userAgent)
+	}
+
+	// No existing account - create new user + workspace
 	user, workspaces, err := s.createNewUser(ctx, firebaseUID, email, provider, emailVerified, photoURL)
 	if err != nil {
 		// Log failed registration
@@ -100,6 +84,15 @@ func (s *AuthService) CompleteAuthentication(
 			"provider": provider,
 		})
 		return nil, fmt.Errorf("failed to create new user: %w", err)
+	}
+
+	// Track initial provider link for new user
+	if err := s.userRepo.LinkProvider(ctx, user.UserID, provider, firebaseUID); err != nil {
+		// Non-blocking: log error but don't fail authentication
+		s.logAuditEvent(ctx, &user.UserID, "provider_link_failed", false, ipAddress, userAgent, map[string]interface{}{
+			"error":    err.Error(),
+			"provider": provider,
+		})
 	}
 
 	// Create session
@@ -119,6 +112,152 @@ func (s *AuthService) CompleteAuthentication(
 		Workspaces: workspaces,
 		SessionID:  session.SessionID,
 		IsNewUser:  true,
+	}, nil
+}
+
+// handleExistingUserLogin processes login for users found by Firebase UID
+func (s *AuthService) handleExistingUserLogin(
+	ctx context.Context,
+	user *entity.User,
+	firebaseUID string,
+	provider string,
+	photoURL *string,
+	deviceID *string,
+	ipAddress *string,
+	userAgent *string,
+) (*AuthResponse, error) {
+	// Update last login timestamp
+	now := time.Now()
+	if err := s.userRepo.UpdateLastLogin(ctx, user.UserID); err != nil {
+		return nil, fmt.Errorf("failed to update last login: %w", err)
+	}
+	user.LastLoginAt = &now
+
+	// Update photo_url if provided and user doesn't have one
+	if photoURL != nil && *photoURL != "" && (user.PhotoURL == nil || *user.PhotoURL == "") {
+		user.PhotoURL = photoURL
+		if err := s.userRepo.Update(ctx, user); err != nil {
+			// Non-blocking: log error but don't fail authentication
+			s.logAuditEvent(ctx, &user.UserID, "photo_update_failed", false, ipAddress, userAgent, map[string]interface{}{
+				"error": err.Error(),
+			})
+		}
+	}
+
+	// Track provider link (idempotent - ON CONFLICT DO NOTHING)
+	if err := s.userRepo.LinkProvider(ctx, user.UserID, provider, firebaseUID); err != nil {
+		// Non-blocking: log error but don't fail authentication
+		s.logAuditEvent(ctx, &user.UserID, "provider_link_failed", false, ipAddress, userAgent, map[string]interface{}{
+			"error":    err.Error(),
+			"provider": provider,
+		})
+	}
+
+	// Get user workspaces
+	workspaces, err := s.userRepo.GetUserWorkspaces(ctx, user.UserID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user workspaces: %w", err)
+	}
+
+	// Create session
+	session, err := s.createSession(ctx, user.UserID, deviceID, ipAddress, userAgent)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create session: %w", err)
+	}
+
+	// Log audit event
+	s.logAuditEvent(ctx, &user.UserID, entity.EventUserLogin, true, ipAddress, userAgent, map[string]interface{}{
+		"provider": provider,
+	})
+
+	return &AuthResponse{
+		User:       user,
+		Workspaces: workspaces,
+		SessionID:  session.SessionID,
+		IsNewUser:  false,
+	}, nil
+}
+
+// handleAccountLinking links a new provider to an existing account (same email, different provider)
+func (s *AuthService) handleAccountLinking(
+	ctx context.Context,
+	existingUser *entity.User,
+	newFirebaseUID string,
+	newProvider string,
+	photoURL *string,
+	deviceID *string,
+	ipAddress *string,
+	userAgent *string,
+) (*AuthResponse, error) {
+	// SECURITY: Prevent account takeover by not automatically linking accounts
+	// If the user already has a Firebase UID (existing account), they must sign in with that provider
+	if existingUser.FirebaseUID != nil && *existingUser.FirebaseUID != newFirebaseUID {
+		// Log failed linking attempt for security monitoring
+		s.logAuditEvent(ctx, &existingUser.UserID, "account_linking_blocked", false, ipAddress, userAgent, map[string]interface{}{
+			"email":              existingUser.Email,
+			"existing_provider":  existingUser.Provider,
+			"attempted_provider": newProvider,
+			"reason":             "automatic linking disabled for security",
+		})
+
+		return nil, fmt.Errorf("this email is already registered with %s. Please sign in using %s",
+			existingUser.Provider, existingUser.Provider)
+	}
+
+	// If firebase_uid matches, this is the same account - just update provider info
+	existingUser.FirebaseUID = &newFirebaseUID
+	existingUser.Provider = newProvider
+
+	// Update photo_url if provided and user doesn't have one
+	if photoURL != nil && *photoURL != "" && (existingUser.PhotoURL == nil || *existingUser.PhotoURL == "") {
+		existingUser.PhotoURL = photoURL
+	}
+
+	// Update user in database
+	if err := s.userRepo.Update(ctx, existingUser); err != nil {
+		return nil, fmt.Errorf("failed to update user for account linking: %w", err)
+	}
+
+	// Track the new provider link
+	if err := s.userRepo.LinkProvider(ctx, existingUser.UserID, newProvider, newFirebaseUID); err != nil {
+		// Non-blocking: log error but don't fail authentication
+		s.logAuditEvent(ctx, &existingUser.UserID, "provider_link_failed", false, ipAddress, userAgent, map[string]interface{}{
+			"error":    err.Error(),
+			"provider": newProvider,
+		})
+	}
+
+	// Update last login
+	now := time.Now()
+	if err := s.userRepo.UpdateLastLogin(ctx, existingUser.UserID); err != nil {
+		return nil, fmt.Errorf("failed to update last login: %w", err)
+	}
+	existingUser.LastLoginAt = &now
+
+	// Get user workspaces
+	workspaces, err := s.userRepo.GetUserWorkspaces(ctx, existingUser.UserID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user workspaces: %w", err)
+	}
+
+	// Create session
+	session, err := s.createSession(ctx, existingUser.UserID, deviceID, ipAddress, userAgent)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create session: %w", err)
+	}
+
+	// Log account linking event
+	s.logAuditEvent(ctx, &existingUser.UserID, "account_linked", true, ipAddress, userAgent, map[string]interface{}{
+		"email":        existingUser.Email,
+		"new_provider": newProvider,
+		"previous_provider": existingUser.Provider,
+	})
+
+	return &AuthResponse{
+		User:       existingUser,
+		Workspaces: workspaces,
+		SessionID:  session.SessionID,
+		IsNewUser:  false,
 	}, nil
 }
 
@@ -379,4 +518,262 @@ func isUsernameAvailable(ctx context.Context, tx *sql.Tx, username string) bool 
 		return false
 	}
 	return count == 0
+}
+
+// isUsernameConflictError checks if an error is due to username unique constraint violation
+func isUsernameConflictError(err error) bool {
+	if err == nil {
+		return false
+	}
+	// Check for PostgreSQL unique constraint error on username
+	// Error code 23505 is unique_violation
+	errMsg := err.Error()
+	return strings.Contains(errMsg, "unique constraint") &&
+		strings.Contains(errMsg, "username") ||
+		strings.Contains(errMsg, "users_username_key") ||
+		strings.Contains(errMsg, "duplicate key value")
+}
+
+// generateUsernameForAttempt generates a username for a specific attempt number
+// attempt 0: base username (e.g., "john_doe")
+// attempt 1+: username with UUID suffix (e.g., "john_doe_a3f9c2b1")
+func generateUsernameForAttempt(email string, attempt int) string {
+	baseUsername := generateUsername(email)
+
+	if attempt == 0 {
+		return baseUsername
+	}
+
+	// Generate UUID suffix for retries
+	suffix := uuid.New().String()[:8]
+	return fmt.Sprintf("%s_%s", baseUsername, suffix)
+}
+
+// RegisterWithUsername creates a new user with optional custom username
+// If username is not provided, it will be auto-generated from email
+func (s *AuthService) RegisterWithUsername(
+	ctx context.Context,
+	firebaseUID string,
+	email string,
+	provider string,
+	emailVerified bool,
+	photoURL *string,
+	username *string,
+	deviceID *string,
+	ipAddress *string,
+	userAgent *string,
+) (*AuthResponse, error) {
+	// Check if user already exists
+	existingUser, err := s.userRepo.GetByFirebaseUID(ctx, firebaseUID)
+	if err == nil && existingUser != nil {
+		// User already exists, return existing user with session
+		return s.handleExistingUserLogin(ctx, existingUser, firebaseUID, provider, photoURL, deviceID, ipAddress, userAgent)
+	}
+
+	// Check if email is already registered (account linking scenario)
+	existingUser, err = s.userRepo.GetByEmail(ctx, email)
+	if err == nil && existingUser != nil {
+		// Account exists with this email but different Firebase UID
+		return s.handleAccountLinking(ctx, existingUser, firebaseUID, provider, photoURL, deviceID, ipAddress, userAgent)
+	}
+
+	// Create new user with provided or auto-generated username
+	user, workspaces, err := s.createNewUserWithUsername(ctx, firebaseUID, email, provider, emailVerified, photoURL, username)
+	if err != nil {
+		// Log failed registration
+		s.logAuditEvent(ctx, nil, entity.EventUserRegistered, false, ipAddress, userAgent, map[string]interface{}{
+			"error":    err.Error(),
+			"email":    email,
+			"provider": provider,
+		})
+		return nil, fmt.Errorf("failed to create new user: %w", err)
+	}
+
+	// Track initial provider link for new user
+	if err := s.userRepo.LinkProvider(ctx, user.UserID, provider, firebaseUID); err != nil {
+		// Non-blocking: log error but don't fail authentication
+		s.logAuditEvent(ctx, &user.UserID, "provider_link_failed", false, ipAddress, userAgent, map[string]interface{}{
+			"error":    err.Error(),
+			"provider": provider,
+		})
+	}
+
+	// Create session
+	session, err := s.createSession(ctx, user.UserID, deviceID, ipAddress, userAgent)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create session: %w", err)
+	}
+
+	// Log successful registration
+	s.logAuditEvent(ctx, &user.UserID, entity.EventUserRegistered, true, ipAddress, userAgent, map[string]interface{}{
+		"email":    email,
+		"provider": provider,
+		"username": user.Username,
+	})
+
+	return &AuthResponse{
+		User:       user,
+		Workspaces: workspaces,
+		SessionID:  session.SessionID,
+		IsNewUser:  true,
+	}, nil
+}
+
+// createNewUserWithUsername creates a new user with optional custom username
+func (s *AuthService) createNewUserWithUsername(
+	ctx context.Context,
+	firebaseUID string,
+	email string,
+	provider string,
+	emailVerified bool,
+	photoURL *string,
+	username *string,
+) (*entity.User, []*entity.Workspace, error) {
+	// Retry loop to handle race conditions in username generation
+	maxRetries := 10
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		user, workspaces, err := s.attemptCreateUserWithUsername(
+			ctx, firebaseUID, email, provider, emailVerified, photoURL, username, attempt,
+		)
+
+		if err == nil {
+			return user, workspaces, nil
+		}
+
+		// Check if error is due to username conflict
+		if isUsernameConflictError(err) && username == nil {
+			// Auto-generated username conflict - retry with new suffix
+			continue
+		}
+
+		// Other errors (including custom username conflicts) should be returned immediately
+		return nil, nil, err
+	}
+
+	return nil, nil, fmt.Errorf("failed to create user after %d attempts: username generation exhausted", maxRetries)
+}
+
+// attemptCreateUserWithUsername makes a single attempt to create a user
+func (s *AuthService) attemptCreateUserWithUsername(
+	ctx context.Context,
+	firebaseUID string,
+	email string,
+	provider string,
+	emailVerified bool,
+	photoURL *string,
+	username *string,
+	attempt int,
+) (*entity.User, []*entity.Workspace, error) {
+	// Start transaction
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+
+	// Add panic recovery to ensure transaction rollback
+	defer func() {
+		if p := recover(); p != nil {
+			tx.Rollback()
+			panic(p) // re-panic after rollback
+		}
+	}()
+	defer tx.Rollback() // Rollback if not committed
+
+	// Determine username
+	var finalUsername string
+	if username != nil && *username != "" {
+		// Custom username provided - check availability once
+		if !isUsernameAvailable(ctx, tx, *username) {
+			return nil, nil, fmt.Errorf("username already taken")
+		}
+		finalUsername = *username
+	} else {
+		// Auto-generate username from email with attempt-based suffix
+		finalUsername = generateUsernameForAttempt(email, attempt)
+	}
+
+	// Create user entity
+	user := &entity.User{
+		UserID:        uuid.New(),
+		FirebaseUID:   &firebaseUID,
+		Email:         email,
+		Username:      finalUsername,
+		EmailVerified: emailVerified,
+		PhotoURL:      photoURL,
+		Provider:      provider,
+		CreatedAt:     time.Now(),
+	}
+
+	// Insert user directly using transaction
+	userQuery := `
+		INSERT INTO users (
+			user_id, firebase_uid, email, username, email_verified,
+			phone_number, photo_url, provider, created_at, last_login_at
+		) VALUES (
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+		)
+	`
+	_, err = tx.ExecContext(ctx, userQuery,
+		user.UserID,
+		user.FirebaseUID,
+		user.Email,
+		user.Username,
+		user.EmailVerified,
+		nil, // phone_number
+		user.PhotoURL,
+		user.Provider,
+		user.CreatedAt,
+		nil, // last_login_at
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create user: %w", err)
+	}
+
+	// Create default workspace
+	workspace := &entity.Workspace{
+		WorkspaceID: uuid.New(),
+		OwnerID:     user.UserID,
+		Name:        fmt.Sprintf("%s's Garden", user.Username),
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+	}
+
+	workspaceQuery := `
+		INSERT INTO workspaces (workspace_id, owner_id, name, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5)
+	`
+	_, err = tx.ExecContext(ctx, workspaceQuery,
+		workspace.WorkspaceID,
+		workspace.OwnerID,
+		workspace.Name,
+		workspace.CreatedAt,
+		workspace.UpdatedAt,
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create workspace: %w", err)
+	}
+
+	// Add user as admin to workspace
+	memberQuery := `
+		INSERT INTO workspace_members (workspace_id, user_id, role, joined_at)
+		VALUES ($1, $2, 'admin', $3)
+		ON CONFLICT (workspace_id, user_id) DO NOTHING
+	`
+	_, err = tx.ExecContext(ctx, memberQuery,
+		workspace.WorkspaceID,
+		user.UserID,
+		time.Now(),
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to add workspace member: %w", err)
+	}
+
+	// Commit transaction
+	if err := tx.Commit(); err != nil {
+		return nil, nil, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	// Return user and workspace list
+	workspaces := []*entity.Workspace{workspace}
+	return user, workspaces, nil
 }

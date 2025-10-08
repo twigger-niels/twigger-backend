@@ -31,7 +31,19 @@
       "Bash(go test:*)",
       "Bash(DATABASE_URL=\"postgres://postgres:postgres@localhost:5432/twigger?sslmode=disable\" FIREBASE_PROJECT_ID=twigger-prod FIREBASE_CREDENTIALS_PATH=./secrets/firebase-admin-key.json AUTH_ENABLED=true ENVIRONMENT=development LOG_LEVEL=debug ./bin/api-gateway.exe)",
       "Bash(DATABASE_URL=\"postgres://postgres:postgres@localhost:5432/twigger?sslmode=disable\" FIREBASE_PROJECT_ID=twigger-prod FIREBASE_CREDENTIALS_PATH=./secrets/firebase-admin-key.json AUTH_ENABLED=true ENVIRONMENT=development LOG_LEVEL=debug ./bin/api-gateway-new.exe)",
-      "Bash(DATABASE_URL=\"postgres://postgres:postgres@localhost:5432/twigger?sslmode=disable\" FIREBASE_PROJECT_ID=twigger-prod FIREBASE_CREDENTIALS_PATH=./secrets/firebase-admin-key.json AUTH_ENABLED=true ENVIRONMENT=development LOG_LEVEL=debug ./bin/api-gateway-final.exe)"
+      "Bash(DATABASE_URL=\"postgres://postgres:postgres@localhost:5432/twigger?sslmode=disable\" FIREBASE_PROJECT_ID=twigger-prod FIREBASE_CREDENTIALS_PATH=./secrets/firebase-admin-key.json AUTH_ENABLED=true ENVIRONMENT=development LOG_LEVEL=debug ./bin/api-gateway-final.exe)",
+      "mcp__ide__getDiagnostics",
+      "Bash(DATABASE_URL=\"postgres://postgres:postgres@localhost:5432/twigger?sslmode=disable\" go run cmd/migrate/main.go version)",
+      "Bash(go clean:*)",
+      "Bash(go list:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Read(//c/Repositories/twigger-backend/**)",
+      "Bash(flutter run:*)",
+      "WebSearch",
+      "Bash(go vet:*)",
+      "Bash(psql:*)"
     ],
     "deny": [],
     "ask": []

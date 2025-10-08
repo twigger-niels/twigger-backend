@@ -52,6 +52,12 @@ type LogoutRequest struct {
 	RevokeAll  bool    `json:"revoke_all"`
 }
 
+// RegisterRequest represents the request body for POST /api/v1/auth/register
+type RegisterRequest struct {
+	Username *string `json:"username,omitempty"`
+	DeviceID *string `json:"device_id,omitempty"`
+}
+
 // HandleVerify handles POST /api/v1/auth/verify
 // This endpoint is called after Firebase has verified the JWT token
 // The middleware has already extracted the user info from the token
@@ -96,6 +102,17 @@ func (h *AuthHandler) HandleVerify(w http.ResponseWriter, r *http.Request) {
 		photoURL = &picture
 	}
 
+	// Email/Password Registration: Require email verification
+	// Social providers (google.com, apple.com, facebook.com) don't need this check
+	if provider == "password" && !emailVerified {
+		// SECURITY: Use error ID instead of exposing Firebase UID
+		errorID := uuid.New().String()
+		logError(r.Context(), fmt.Sprintf("email verification required [error_id: %s]", errorID),
+			fmt.Errorf("auth_failed"), "")
+		utils.RespondError(w, errors.New("Please verify your email address before signing in. Check your inbox for the verification link."))
+		return
+	}
+
 	// Parse request body for device_id
 	var req VerifyRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err.Error() != "EOF" {
@@ -121,8 +138,9 @@ func (h *AuthHandler) HandleVerify(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if err != nil {
-		// Log detailed error server-side
-		logError(r.Context(), "authentication failed", err, firebaseUID)
+		// SECURITY: Use error ID for correlation instead of Firebase UID
+		errorID := uuid.New().String()
+		logError(r.Context(), fmt.Sprintf("authentication failed [error_id: %s]", errorID), err, "")
 		// Return generic error to client
 		utils.RespondError(w, errors.New("authentication failed"))
 		return
@@ -223,6 +241,104 @@ func (h *AuthHandler) HandleMe(w http.ResponseWriter, r *http.Request) {
 		"user":       user,
 		"workspaces": workspaces,
 	})
+}
+
+// HandleRegister handles POST /api/v1/auth/register
+// This endpoint is for email/password registration with optional username
+func (h *AuthHandler) HandleRegister(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Extract Firebase UID from context (set by middleware)
+	userIDStr := utils.GetUserID(ctx)
+	if userIDStr == "" {
+		utils.RespondUnauthorized(w, "Missing user ID")
+		return
+	}
+
+	// Extract Firebase claims from context (set by middleware)
+	claims, ok := ctx.Value("firebase_claims").(map[string]interface{})
+	if !ok {
+		utils.RespondUnauthorized(w, "Missing Firebase claims")
+		return
+	}
+
+	// Use the user ID from context (which is the Firebase UID)
+	firebaseUID := userIDStr
+
+	email, ok := claims["email"].(string)
+	if !ok || email == "" {
+		utils.RespondUnauthorized(w, "Invalid authentication token")
+		return
+	}
+
+	// Extract optional fields
+	provider := "password" // default for email/password registration
+	if p, ok := claims["firebase"].(map[string]interface{}); ok {
+		if signInProvider, ok := p["sign_in_provider"].(string); ok {
+			provider = signInProvider
+		}
+	}
+
+	emailVerified, _ := claims["email_verified"].(bool)
+
+	// Email/Password Registration: Require email verification
+	if provider == "password" && !emailVerified {
+		// SECURITY: Use error ID instead of exposing Firebase UID
+		errorID := uuid.New().String()
+		logError(r.Context(), fmt.Sprintf("email verification required [error_id: %s]", errorID),
+			fmt.Errorf("registration_failed"), "")
+		utils.RespondError(w, errors.New("Please verify your email address before completing registration. Check your inbox for the verification link."))
+		return
+	}
+
+	var photoURL *string
+	if picture, ok := claims["picture"].(string); ok && picture != "" {
+		photoURL = &picture
+	}
+
+	// Parse request body for optional username and device_id
+	var req RegisterRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err.Error() != "EOF" {
+		utils.RespondError(w, fmt.Errorf("invalid request body: %w", err))
+		return
+	}
+
+	// Extract client info
+	ipAddress := getClientIP(r)
+	userAgent := getUserAgent(r)
+
+	// Register user with optional username
+	response, err := h.authService.RegisterWithUsername(
+		ctx,
+		firebaseUID,
+		email,
+		provider,
+		emailVerified,
+		photoURL,
+		req.Username,
+		req.DeviceID,
+		ipAddress,
+		userAgent,
+	)
+
+	if err != nil {
+		// SECURITY: Use error ID for correlation instead of Firebase UID
+		errorID := uuid.New().String()
+		logError(r.Context(), fmt.Sprintf("registration failed [error_id: %s]", errorID), err, "")
+
+		// Check for username taken error
+		if strings.Contains(err.Error(), "username already taken") {
+			utils.RespondError(w, errors.New("Username already taken. Please choose another."))
+			return
+		}
+
+		// Return generic error to client
+		utils.RespondError(w, errors.New("registration failed"))
+		return
+	}
+
+	// Return response
+	utils.RespondJSON(w, http.StatusOK, response)
 }
 
 // Helper functions

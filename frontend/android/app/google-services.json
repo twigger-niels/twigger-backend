@@ -1,0 +1,46 @@
+{
+  "project_info": {
+    "project_number": "53871324357",
+    "project_id": "twigger-prod",
+    "storage_bucket": "twigger-prod.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:53871324357:android:84d3be44efeadbcfa194ac",
+        "android_client_info": {
+          "package_name": "com.twigger.frontend"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "53871324357-d4kl4k1emvmq8v3tv1ihdgj7mh0f9uim.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAKgGqkB8HaXJv4liSpfKuDhOHDOYLM-A4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "53871324357-d4kl4k1emvmq8v3tv1ihdgj7mh0f9uim.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "53871324357-ld0us2jumg5hp2gkq09kao2luil0h0ke.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.twigger.frontend"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

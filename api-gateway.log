@@ -1,0 +1,5 @@
+2025/10/08 15:17:52 Successfully connected to database
+2025/10/08 15:17:52 Successfully initialized Firebase
+2025/10/08 15:17:52 Starting API Gateway on port 8080
+2025/10/08 15:17:52 Server failed to start: listen tcp :8080: bind: Only one usage of each socket address (protocol/network address/port) is normally permitted.
+exit status 1

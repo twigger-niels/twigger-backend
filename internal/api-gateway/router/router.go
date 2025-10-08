@@ -43,6 +43,11 @@ func NewRouter(h *handlers.Handlers, authMiddleware *middleware.AuthMiddleware, 
 	verifyRouter.Use(authMiddleware.RequireAuth)
 	verifyRouter.HandleFunc("", h.AuthHandler.HandleVerify).Methods("POST", "OPTIONS")
 
+	// POST /api/v1/auth/register - Register with optional username (requires auth)
+	registerRouter := authRouter.PathPrefix("/register").Subrouter()
+	registerRouter.Use(authMiddleware.RequireAuth)
+	registerRouter.HandleFunc("", h.AuthHandler.HandleRegister).Methods("POST", "OPTIONS")
+
 	// POST /api/v1/auth/logout - Logout (requires auth)
 	logoutRouter := authRouter.PathPrefix("/logout").Subrouter()
 	logoutRouter.Use(authMiddleware.RequireAuth)
